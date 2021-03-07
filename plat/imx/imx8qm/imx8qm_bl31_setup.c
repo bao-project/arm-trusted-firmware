@@ -26,6 +26,7 @@
 #include <plat_imx8.h>
 #include <sci/sci.h>
 #include <sec_rsrc.h>
+#include <sid_rsrc.h>
 
 static const unsigned long BL31_COHERENT_RAM_START	= BL_COHERENT_RAM_BASE;
 static const unsigned long BL31_COHERENT_RAM_END	= BL_COHERENT_RAM_END;
@@ -216,6 +217,15 @@ void mx8_partition_resources(void)
 	err = sc_rm_move_all(ipc_handle, secure_part, os_part, true, true);
 	if (err)
 		ERROR("sc_rm_move_all: %u\n", err);
+
+	/* set master smmu stream ids */
+	for(i = 0; i < ARRAY_SIZE(sid_rsrcs); i++){
+		sc_rsrc_t rsrc = sid_rsrcs[i].rsrc;
+		sc_rm_sid_t sid = sid_rsrcs[i].sid;
+		err = sc_rm_set_master_sid(ipc_handle, rsrc, sid);
+		if (err) 
+			ERROR("sc_rm_set_master_sid: rsrc %u, ret %u\n", rsrc, err);
+	}
 
 	/* iterate through peripherals to give NS OS part access */
 	for (i = 0; i < ARRAY_SIZE(ns_access_allowed); i++) {
