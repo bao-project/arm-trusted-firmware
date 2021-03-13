@@ -32,6 +32,26 @@ const static uint32_t tegra186_streamid_override_regs[] = {
 };
 
 /*******************************************************************************
+ * Array to hold stream_id configuration for a number of bus masters
+ ******************************************************************************/
+/**
+ * - Stream ids are ??-bit wide.
+ * - The stream id 0x7f is reserved as an smmu bypassable id.
+ * - When setting up the table for a given system configuration all of the bus 
+ *  masters intended for the same translation context (e.g. virtual machine)
+ *  should be configured with the same stream id as the number of stream match 
+ *  registers in SMMU-500 is limited.
+ */
+
+struct {
+    uint32_t offset;
+    uint32_t sid;
+} tegra186_streamids[] = {
+    {MC_STREAMID_OVERRIDE_CFG_EQOSR, 0x1},
+    {MC_STREAMID_OVERRIDE_CFG_EQOSW, 0x1},
+};
+
+/*******************************************************************************
  * Array to hold the security configs for stream IDs
  ******************************************************************************/
 const static mc_streamid_security_cfg_t tegra186_streamid_sec_cfgs[] = {
@@ -619,6 +639,12 @@ void plat_memctrl_setup(void)
 		tegra_mc_streamid_write_32(tegra186_streamid_override_regs[i],
 			MC_STREAM_ID_MAX);
 	}
+
+	/* Program all the custom Stream IDs */
+	for (i = 0U; i < ARRAY_SIZE(tegra186_streamids); i++) {
+		tegra_mc_streamid_write_32(tegra186_streamids[i].offset, 
+			tegra186_streamids[i].sid);
+	}	
 
 	/* Program the security config settings for all Stream IDs */
 	for (i = 0U; i < ARRAY_SIZE(tegra186_streamid_sec_cfgs); i++) {
