@@ -1,0 +1,3 @@
+[submodule "partitioner/partitioner"]
+	path = partitioner/partitioner
+	url = git@github.com:bao-project/bao-partitioner.git
