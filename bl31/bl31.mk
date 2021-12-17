@@ -25,6 +25,7 @@ endif
 include lib/extensions/amu/amu.mk
 include lib/mpmm/mpmm.mk
 include lib/psci/psci_lib.mk
+include partitioner/partitioner.mk
 
 BL31_SOURCES		+=	bl31/bl31_main.c				\
 				bl31/interrupt_mgmt.c				\
@@ -40,7 +41,8 @@ BL31_SOURCES		+=	bl31/bl31_main.c				\
 				services/std_svc/std_svc_setup.c		\
 				${PSCI_LIB_SOURCES}				\
 				${SPMD_SOURCES}					\
-				${SPM_SOURCES}
+				${SPM_SOURCES}					\
+				${PARTITIONER_SOURCES}
 
 ifeq (${DISABLE_MTPMU},1)
 BL31_SOURCES		+=	lib/extensions/mtpmu/aarch64/mtpmu.S
