@@ -13,6 +13,8 @@
 #include <lib/runtime_instr.h>
 #include <lib/xlat_tables/xlat_mmu_helpers.h>
 
+#include <partition.h>
+
 	.globl	bl31_entrypoint
 	.globl	bl31_warm_entrypoint
 
@@ -123,6 +125,12 @@ func bl31_entrypoint
 	add	x1, x1, :lo12:__BSS_END__
 	sub	x1, x1, x0
 	bl	clean_dcache_range
+
+	/* --------------------------------------------------------------------
+	 * Jump to partitioner init function
+	 * --------------------------------------------------------------------
+	 */
+	bl	partitions_init
 
 	b	el3_exit
 endfunc bl31_entrypoint
