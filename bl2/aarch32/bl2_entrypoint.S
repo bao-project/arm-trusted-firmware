@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2019, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2016-2022, ARM Limited and Contributors. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -16,8 +16,8 @@ vector_base bl2_vector_table
 	b	bl2_entrypoint
 	b	report_exception	/* Undef */
 	b	report_exception	/* SVC call */
-	b	report_exception	/* Prefetch abort */
-	b	report_exception	/* Data abort */
+	b	report_prefetch_abort	/* Prefetch abort */
+	b	report_data_abort	/* Data abort */
 	b	report_exception	/* Reserved */
 	b	report_exception	/* IRQ */
 	b	report_exception	/* FIQ */
@@ -80,12 +80,14 @@ func bl2_entrypoint
 	 * ---------------------------------------------
 	 */
 	ldr	r0, =__BSS_START__
-	ldr	r1, =__BSS_SIZE__
+	ldr	r1, =__BSS_END__
+	sub 	r1, r1, r0
 	bl	zeromem
 
 #if USE_COHERENT_MEM
 	ldr	r0, =__COHERENT_RAM_START__
-	ldr	r1, =__COHERENT_RAM_UNALIGNED_SIZE__
+	ldr	r1, =__COHERENT_RAM_END_UNALIGNED__
+	sub 	r1, r1, r0
 	bl	zeromem
 #endif
 

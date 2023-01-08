@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2018 Marvell International Ltd.
+ * Copyright (C) 2018-2021 Marvell International Ltd.
  *
  * SPDX-License-Identifier:	BSD-3-Clause
  * https://spdx.org/licenses
@@ -41,8 +41,49 @@
 #define MVEBU_GICR_BASE			0x1D40000
 #define MVEBU_GICC_BASE			0x1D80000
 
-/* CCI-400 */
-#define MVEBU_CCI_BASE			0x8000000
+/*
+ * CCI-400 base address
+ * This address is absolute, not relative to MVEBU_REGS_BASE.
+ * This is not the default CCI base address (that would be 0xD8000000).
+ * Rather we remap CCI to this address to better utilize the address space.
+ * (The remapping is done in plat/marvell/armada/a3k/common/plat_cci.c)
+ */
+#define MVEBU_CCI_BASE			0xFE000000
+
+/*****************************************************************************
+ * North and south bridge reset registers
+ *****************************************************************************
+ */
+#define MVEBU_NB_RESET_REG		(MVEBU_REGS_BASE + 0x12400)
+#define   MVEBU_NB_RESET_I2C1_N		(1 << 0)
+#define   MVEBU_NB_RESET_1WIRE_N	(1 << 1)
+#define   MVEBU_NB_RESET_SPI_N		(1 << 2)
+#define   MVEBU_NB_RESET_UART_N		(1 << 3)
+#define   MVEBU_NB_RESET_XTL_N		(1 << 4)
+#define   MVEBU_NB_RESET_I2C2_N		(1 << 5)
+#define   MVEBU_NB_RESET_UART2_N	(1 << 6)
+#define   MVEBU_NB_RESET_AVS_N		(1 << 7)
+#define   MVEBU_NB_RESET_DDR_N		(1 << 10)
+#define   MVEBU_NB_RESET_SETM_N		(1 << 11)
+#define   MVEBU_NB_RESET_DMA_N		(1 << 12)
+#define   MVEBU_NB_RESET_TSECM_N	(1 << 13)
+#define   MVEBU_NB_RESET_SDIO_N		(1 << 14)
+#define   MVEBU_NB_RESET_SATA_N		(1 << 15)
+#define   MVEBU_NB_RESET_PWRMGT_N	(1 << 16)
+#define   MVEBU_NB_RESET_OTP_N		(1 << 17)
+#define   MVEBU_NB_RESET_EIP_N		(1 << 18)
+#define MVEBU_SB_RESET_REG		(MVEBU_REGS_BASE + 0x18600)
+#define   MVEBU_SB_RESET_MCIPHY		(1 << 1)
+#define   MVEBU_SB_RESET_SDIO_N		(1 << 2)
+#define   MVEBU_SB_RESET_PCIE_N		(1 << 3)
+#define   MVEBU_SB_RESET_GBE1_N		(1 << 4)
+#define   MVEBU_SB_RESET_GBE0_N		(1 << 5)
+#define   MVEBU_SB_RESET_USB2PHY	(1 << 6)
+#define   MVEBU_SB_RESET_USB2HPHY	(1 << 7)
+#define   MVEBU_SB_RESET_MCI_N		(1 << 8)
+#define   MVEBU_SB_RESET_PWRMGT_N	(1 << 9)
+#define   MVEBU_SB_RESET_EBM_N		(1 << 10)
+#define   MVEBU_SB_RESET_OTP_N		(1 << 11)
 
 /*****************************************************************************
  * North and south bridge register base
@@ -118,5 +159,11 @@
  *****************************************************************************
  */
 #define MVEBU_COMPHY_REG_BASE			(MVEBU_REGS_BASE + 0x18300)
+
+/*****************************************************************************
+ * Cortex-M3 Secure Processor Mailbox constants
+ *****************************************************************************
+ */
+#define MVEBU_RWTM_REG_BASE			(MVEBU_REGS_BASE + 0xB0000)
 
 #endif /* A3700_PLAT_DEF_H */

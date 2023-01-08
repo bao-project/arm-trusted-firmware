@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2019, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2018-2022, ARM Limited and Contributors. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -32,7 +32,7 @@
 		.pwr_req = name##_PWR_REQ,		\
 		.pgc_offset = name##_PGC,		\
 		.need_sync = false,			\
-		.always_on = true,			\
+		.always_on = (on),			\
 	}
 
 #define IMX_MIX_DOMAIN(name, on)			\
@@ -42,7 +42,7 @@
 		.adb400_sync = name##_ADB400_SYNC,	\
 		.adb400_ack = name##_ADB400_ACK,	\
 		.need_sync = true,			\
-		.always_on = true,			\
+		.always_on = (on),			\
 	}
 
 struct imx_pwr_domain {
@@ -69,5 +69,7 @@ void imx_set_sys_wakeup(unsigned int last_core, bool pdn);
 void imx_set_sys_lpm(unsigned last_core, bool retention);
 void imx_set_rbc_count(void);
 void imx_clear_rbc_count(void);
+void imx_anamix_override(bool enter);
+void imx_gpc_pm_domain_enable(uint32_t domain_id, bool on);
 
 #endif /*IMX8M_GPC_H */

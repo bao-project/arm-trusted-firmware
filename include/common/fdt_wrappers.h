@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2020, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2018-2022, ARM Limited and Contributors. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -24,6 +24,8 @@ int fdt_read_uint32_array(const void *dtb, int node, const char *prop_name,
 			  unsigned int cells, uint32_t *value);
 int fdtw_read_string(const void *dtb, int node, const char *prop,
 		char *str, size_t size);
+int fdtw_read_uuid(const void *dtb, int node, const char *prop,
+		   unsigned int length, uint8_t *uuid);
 int fdtw_write_inplace_cells(void *dtb, int node, const char *prop,
 		unsigned int cells, void *value);
 int fdtw_read_bytes(const void *dtb, int node, const char *prop,
@@ -39,11 +41,21 @@ int fdt_get_stdout_node_offset(const void *dtb);
 uint64_t fdtw_translate_address(const void *dtb, int bus_node,
 				uint64_t base_address);
 
+int fdtw_for_each_cpu(const void *fdt,
+		      int (*callback)(const void *dtb, int node, uintptr_t mpidr));
+
+int fdtw_find_or_add_subnode(void *fdt, int parentoffset, const char *name);
+
 static inline uint32_t fdt_blob_size(const void *dtb)
 {
 	const uint32_t *dtb_header = dtb;
 
 	return fdt32_to_cpu(dtb_header[1]);
 }
+
+#define fdt_for_each_compatible_node(dtb, node, compatible_str)       \
+for (node = fdt_node_offset_by_compatible(dtb, -1, compatible_str);   \
+     node >= 0;                                                       \
+     node = fdt_node_offset_by_compatible(dtb, node, compatible_str))
 
 #endif /* FDT_WRAPPERS_H */

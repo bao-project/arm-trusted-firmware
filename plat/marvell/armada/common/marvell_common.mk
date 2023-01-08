@@ -6,10 +6,6 @@
 MARVELL_PLAT_BASE		:= plat/marvell/armada
 MARVELL_PLAT_INCLUDE_BASE	:= include/plat/marvell/armada
 
-include plat/marvell/version.mk
-
-VERSION_STRING			+=(Marvell-${SUBVERSION})
-
 SEPARATE_CODE_AND_RODATA	:= 1
 
 # flag to switch from PLL to ARO
@@ -85,3 +81,19 @@ endif
 ifeq (${MSS_SUPPORT}, 1)
 include $(MARVELL_PLAT_BASE)/common/mss/mss_common.mk
 endif
+
+$(BUILD_PLAT)/$(BOOT_IMAGE): $(BUILD_PLAT)/bl1.bin $(BUILD_PLAT)/$(FIP_NAME)
+	$(if $(shell find $(BUILD_PLAT)/bl1.bin -type f -size +128k),$(error "Image '$(BUILD_PLAT)/bl1.bin' is bigger than 128kB"))
+	@cp $(BUILD_PLAT)/bl1.bin $(BUILD_PLAT)/$(BOOT_IMAGE) || { rm -f $(BUILD_PLAT)/$(BOOT_IMAGE); false; }
+	@truncate -s %128K $(BUILD_PLAT)/$(BOOT_IMAGE) || { rm -f $(BUILD_PLAT)/$(BOOT_IMAGE); false; }
+	@cat $(BUILD_PLAT)/$(FIP_NAME) >> $(BUILD_PLAT)/$(BOOT_IMAGE) || { rm -f $(BUILD_PLAT)/$(BOOT_IMAGE); false; }
+	@truncate -s %4 $(BUILD_PLAT)/$(BOOT_IMAGE) || { rm -f $(BUILD_PLAT)/$(BOOT_IMAGE); false; }
+	@$(ECHO_BLANK_LINE)
+	@echo "Built $@ successfully"
+	@$(ECHO_BLANK_LINE)
+
+.PHONY: mrvl_bootimage
+mrvl_bootimage: $(BUILD_PLAT)/$(BOOT_IMAGE)
+
+.PHONY: mrvl_flash
+mrvl_flash: $(BUILD_PLAT)/$(FLASH_IMAGE)

@@ -15,6 +15,10 @@ You can find additional definitions in the `Arm Glossary`_.
    AArch64
       64-bit execution state of the ARMv8 ISA
 
+   AMU
+      Activity Monitor Unit, a hardware monitoring unit introduced by FEAT_AMUv1
+      that exposes CPU core runtime metrics as a set of counter registers.
+
    API
       Application Programming Interface
 
@@ -35,6 +39,18 @@ You can find additional definitions in the `Arm Glossary`_.
    CVE
       Common Vulnerabilities and Exposures. A CVE document is commonly used to
       describe a publicly-known security vulnerability.
+
+   DCE
+      DRTM Configuration Environment
+
+   D-CRTM
+      Dynamic Code Root of Trust for Measurement
+
+   DLME
+      Dynamically Launched Measured Environment
+
+   DRTM
+      Dynamic Root of Trust for Measurement
 
    DS-5
       Arm Development Studio 5
@@ -60,8 +76,8 @@ You can find additional definitions in the `Arm Glossary`_.
    FDT
       Flattened Device Tree
 
-   FFA
-      Firmware Framework for A-class processors
+   FF-A
+      Firmware Framework for Arm A-profile
 
    FIP
       Firmware Image Package
@@ -82,11 +98,18 @@ You can find additional definitions in the `Arm Glossary`_.
       A collaborative engineering organization consolidating
       and optimizing open source software and tools for the Arm architecture.
 
+   LSP
+      A logical secure partition managed by SPM
+
    MMU
       Memory Management Unit
 
    MPAM
       Memory Partitioning And Monitoring. An optional Armv8.4 extension.
+
+   MPMM
+     Maximum Power Mitigation Mechanism, an optional power management mechanism
+     supported by some Arm Armv9-A cores.
 
    MPIDR
       Multiprocessor Affinity Register
@@ -178,6 +201,9 @@ You can find additional definitions in the `Arm Glossary`_.
    TBBR
       Trusted Board Boot Requirements
 
+   TCB
+      Trusted Compute Base
+
    TEE
       Trusted Execution Environment
 
@@ -192,6 +218,9 @@ You can find additional definitions in the `Arm Glossary`_.
 
    TLK
       Trusted Little Kernel. A Trusted OS from NVIDIA.
+
+   TRNG
+      True Randon Number Generator (hardware based)
 
    TSP
       Test Secure Payload

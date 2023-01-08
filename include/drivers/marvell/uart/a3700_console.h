@@ -9,6 +9,7 @@
 #define A3700_CONSOLE_H
 
 #include <drivers/console.h>
+#include <platform_def.h>
 
 /* MVEBU UART Registers */
 #define UART_RX_REG		0x00
@@ -48,11 +49,12 @@
 
 /* Line Status Register bits */
 #define UARTLSR_TXFIFOFULL	(1 << 11)	/* Tx Fifo Full */
+#define UARTLSR_TXEMPTY		(1 << 6)	/* Tx Empty */
+#define UARTLSR_RXRDY		(1 << 4)	/* Rx Ready */
 
 /* UART Control Register bits */
 #define UART_CTRL_RXFIFO_RESET	(1 << 14)
 #define UART_CTRL_TXFIFO_RESET	(1 << 15)
-#define UARTLSR_TXFIFOEMPTY	(1 << 6)
 
 #ifndef __ASSEMBLER__
 

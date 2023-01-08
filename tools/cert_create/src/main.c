@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2020, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2015-2022, Arm Limited and Contributors. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -84,7 +84,9 @@ static char *strdup(const char *str)
 static const char *key_algs_str[] = {
 	[KEY_ALG_RSA] = "rsa",
 #ifndef OPENSSL_NO_EC
-	[KEY_ALG_ECDSA] = "ecdsa"
+	[KEY_ALG_ECDSA_NIST] = "ecdsa",
+	[KEY_ALG_ECDSA_BRAINPOOL_R] = "ecdsa-brainpool-regular",
+	[KEY_ALG_ECDSA_BRAINPOOL_T] = "ecdsa-brainpool-twisted",
 #endif /* OPENSSL_NO_EC */
 };
 
@@ -106,7 +108,7 @@ static void print_help(const char *cmd, const struct option *long_opt)
 
 	printf("\n\n");
 	printf("The certificate generation tool loads the binary images and\n"
-	       "optionally the RSA keys, and outputs the key and content\n"
+	       "optionally the RSA or ECC keys, and outputs the key and content\n"
 	       "certificates properly signed to implement the chain of trust.\n"
 	       "If keys are provided, they must be in PEM format.\n"
 	       "Certificates are generated in DER format.\n");
@@ -267,7 +269,8 @@ static const cmd_opt_t common_cmd_opt[] = {
 	},
 	{
 		{ "key-alg", required_argument, NULL, 'a' },
-		"Key algorithm: 'rsa' (default)- RSAPSS scheme as per PKCS#1 v2.1, 'ecdsa'"
+		"Key algorithm: 'rsa' (default)- RSAPSS scheme as per PKCS#1 v2.1, " \
+		"'ecdsa', 'ecdsa-brainpool-regular', 'ecdsa-brainpool-twisted'"
 	},
 	{
 		{ "key-size", required_argument, NULL, 'b' },
@@ -430,10 +433,12 @@ int main(int argc, char *argv[])
 
 	/* Load private keys from files (or generate new ones) */
 	for (i = 0 ; i < num_keys ; i++) {
+#if !USING_OPENSSL3
 		if (!key_new(&keys[i])) {
 			ERROR("Failed to allocate key container\n");
 			exit(1);
 		}
+#endif
 
 		/* First try to load the key from disk */
 		if (key_load(&keys[i], &err_code)) {
@@ -473,6 +478,11 @@ int main(int argc, char *argv[])
 
 		cert = &certs[i];
 
+		if (cert->fn == NULL) {
+			/* Certificate not requested. Skip to the next one */
+			continue;
+		}
+
 		/* Create a new stack of extensions. This stack will be used
 		 * to create the certificate */
 		CHECK_NULL(sk, sk_X509_EXTENSION_new_null());
@@ -492,7 +502,12 @@ int main(int argc, char *argv[])
 			 */
 			switch (ext->type) {
 			case EXT_TYPE_NVCOUNTER:
-				if (ext->arg) {
+				if (ext->optional && ext->arg == NULL) {
+					/* Skip this NVCounter */
+					continue;
+				} else {
+					/* Checked by `check_cmd_params` */
+					assert(ext->arg != NULL);
 					nvctr = atoi(ext->arg);
 					CHECK_NULL(cert_ext, ext_new_nvcounter(ext_nid,
 						EXT_CRIT, nvctr));
@@ -505,7 +520,7 @@ int main(int argc, char *argv[])
 						memset(md, 0x0, SHA512_DIGEST_LENGTH);
 					} else {
 						/* Do not include this hash in the certificate */
-						break;
+						continue;
 					}
 				} else {
 					/* Calculate the hash of the file */
@@ -534,9 +549,14 @@ int main(int argc, char *argv[])
 		}
 
 		/* Create certificate. Signed with corresponding key */
-		if (cert->fn && !cert_new(hash_alg, cert, VAL_DAYS, 0, sk)) {
+		if (!cert_new(hash_alg, cert, VAL_DAYS, 0, sk)) {
 			ERROR("Cannot create %s\n", cert->cn);
 			exit(1);
+		}
+
+		for (cert_ext = sk_X509_EXTENSION_pop(sk); cert_ext != NULL;
+				cert_ext = sk_X509_EXTENSION_pop(sk)) {
+			X509_EXTENSION_free(cert_ext);
 		}
 
 		sk_X509_EXTENSION_free(sk);
@@ -576,10 +596,22 @@ int main(int argc, char *argv[])
 		}
 	}
 
+	/* If we got here, then we must have filled the key array completely.
+	 * We can then safely call free on all of the keys in the array
+	 */
+	key_cleanup();
+
 #ifndef OPENSSL_NO_ENGINE
 	ENGINE_cleanup();
 #endif
 	CRYPTO_cleanup_all_ex_data();
+
+
+	/* We allocated strings through strdup, so now we have to free them */
+
+	ext_cleanup();
+
+	cert_cleanup();
 
 	return 0;
 }

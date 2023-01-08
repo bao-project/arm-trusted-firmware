@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2020, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2013-2022, Arm Limited and Contributors. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -41,6 +41,14 @@
 			define_psci_cap(PSCI_STAT_COUNT_AARCH64) |	\
 			define_psci_cap(PSCI_SYSTEM_RESET2_AARCH64) |	\
 			define_psci_cap(PSCI_MEM_CHK_RANGE_AARCH64))
+
+/* Internally PSCI uses a uint16_t for various cpu indexes so
+ * define a limit to number of CPUs that can be initialised.
+ */
+#define PSCI_MAX_CPUS_INDEX	0xFFFFU
+
+/* Invalid parent */
+#define PSCI_PARENT_NODE_INVALID	0xFFFFFFFFU
 
 /*
  * Helper functions to get/set the fields of PSCI per-cpu data.
@@ -134,7 +142,7 @@ typedef struct non_cpu_pwr_domain_node {
 	unsigned char level;
 
 	/* For indexing the psci_lock array*/
-	unsigned char lock_index;
+	uint16_t lock_index;
 } non_cpu_pd_node_t;
 
 typedef struct cpu_pwr_domain_node {
@@ -239,7 +247,7 @@ static inline void psci_lock_release(non_cpu_pd_node_t *non_cpu_pd_node)
 #endif /* HW_ASSISTED_COHERENCY */
 
 static inline void psci_lock_init(non_cpu_pd_node_t *non_cpu_pd_node,
-				  unsigned char idx)
+				  uint16_t idx)
 {
 	non_cpu_pd_node[idx].lock_index = idx;
 }
@@ -286,9 +294,8 @@ unsigned int psci_find_max_off_lvl(const psci_power_state_t *state_info);
 unsigned int psci_find_target_suspend_lvl(const psci_power_state_t *state_info);
 void psci_set_pwr_domains_to_run(unsigned int end_pwrlvl);
 void psci_print_power_domain_map(void);
-unsigned int psci_is_last_on_cpu(void);
+bool psci_is_last_on_cpu(void);
 int psci_spd_migrate_info(u_register_t *mpidr);
-void psci_do_pwrdown_sequence(unsigned int power_level);
 
 /*
  * CPU power down is directly called only when HW_ASSISTED_COHERENCY is

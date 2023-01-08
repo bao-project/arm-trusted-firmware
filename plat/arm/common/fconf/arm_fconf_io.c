@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, ARM Limited. All rights reserved.
+ * Copyright (c) 2019-2022, ARM Limited. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -9,6 +9,7 @@
 #include <common/debug.h>
 #include <common/fdt_wrappers.h>
 #include <drivers/io/io_storage.h>
+#include <drivers/partition/partition.h>
 #include <lib/object_pool.h>
 #include <libfdt.h>
 #include <tools_share/firmware_image_package.h>
@@ -17,10 +18,39 @@
 #include <plat/arm/common/arm_fconf_io_storage.h>
 #include <platform_def.h>
 
-const io_block_spec_t fip_block_spec = {
-	.offset = PLAT_ARM_FIP_BASE,
-	.length = PLAT_ARM_FIP_MAX_SIZE
+#if PSA_FWU_SUPPORT
+/* metadata entry details */
+static io_block_spec_t fwu_metadata_spec;
+#endif /* PSA_FWU_SUPPORT */
+
+io_block_spec_t fip_block_spec = {
+/*
+ * This is fixed FIP address used by BL1, BL2 loads partition table
+ * to get FIP address.
+ */
+#if ARM_GPT_SUPPORT
+	.offset = PLAT_ARM_FLASH_IMAGE_BASE + PLAT_ARM_FIP_OFFSET_IN_GPT,
+#else
+	.offset = PLAT_ARM_FLASH_IMAGE_BASE,
+#endif /* ARM_GPT_SUPPORT */
+	.length = PLAT_ARM_FLASH_IMAGE_MAX_SIZE
 };
+
+#if ARM_GPT_SUPPORT
+static const io_block_spec_t gpt_spec = {
+	.offset         = PLAT_ARM_FLASH_IMAGE_BASE,
+	/*
+	 * PLAT_PARTITION_BLOCK_SIZE = 512
+	 * PLAT_PARTITION_MAX_ENTRIES = 128
+	 * each sector has 4 partition entries, and there are
+	 * 2 reserved sectors i.e. protective MBR and primary
+	 * GPT header hence length gets calculated as,
+	 * length = 512 * (128/4 + 2)
+	 */
+	.length         = PLAT_PARTITION_BLOCK_SIZE *
+			  (PLAT_PARTITION_MAX_ENTRIES / 4 + 2),
+};
+#endif /* ARM_GPT_SUPPORT */
 
 const io_uuid_spec_t arm_uuid_spec[MAX_NUMBER_IDS] = {
 	[BL2_IMAGE_ID] = {UUID_TRUSTED_BOOT_FIRMWARE_BL2},
@@ -37,10 +67,14 @@ const io_uuid_spec_t arm_uuid_spec[MAX_NUMBER_IDS] = {
 	[SOC_FW_CONFIG_ID] = {UUID_SOC_FW_CONFIG},
 	[TOS_FW_CONFIG_ID] = {UUID_TOS_FW_CONFIG},
 	[NT_FW_CONFIG_ID] = {UUID_NT_FW_CONFIG},
+	[RMM_IMAGE_ID] = {UUID_REALM_MONITOR_MGMT_FIRMWARE},
 #endif /* ARM_IO_IN_DTB */
 #if TRUSTED_BOARD_BOOT
 	[TRUSTED_BOOT_FW_CERT_ID] = {UUID_TRUSTED_BOOT_FW_CERT},
 #if !ARM_IO_IN_DTB
+	[CCA_CONTENT_CERT_ID] = {UUID_CCA_CONTENT_CERT},
+	[CORE_SWD_KEY_CERT_ID] = {UUID_CORE_SWD_KEY_CERT},
+	[PLAT_KEY_CERT_ID] = {UUID_PLAT_KEY_CERT},
 	[TRUSTED_KEY_CERT_ID] = {UUID_TRUSTED_KEY_CERT},
 	[SCP_FW_KEY_CERT_ID] = {UUID_SCP_FW_KEY_CERT},
 	[SOC_FW_KEY_CERT_ID] = {UUID_SOC_FW_KEY_CERT},
@@ -60,6 +94,27 @@ const io_uuid_spec_t arm_uuid_spec[MAX_NUMBER_IDS] = {
 
 /* By default, ARM platforms load images from the FIP */
 struct plat_io_policy policies[MAX_NUMBER_IDS] = {
+#if ARM_GPT_SUPPORT
+	[GPT_IMAGE_ID] = {
+		&memmap_dev_handle,
+		(uintptr_t)&gpt_spec,
+		open_memmap
+	},
+#endif /* ARM_GPT_SUPPORT */
+#if PSA_FWU_SUPPORT
+	[FWU_METADATA_IMAGE_ID] = {
+		&memmap_dev_handle,
+		/* filled runtime from partition information */
+		(uintptr_t)&fwu_metadata_spec,
+		open_memmap
+	},
+	[BKUP_FWU_METADATA_IMAGE_ID] = {
+		&memmap_dev_handle,
+		/* filled runtime from partition information */
+		(uintptr_t)&fwu_metadata_spec,
+		open_memmap
+	},
+#endif /* PSA_FWU_SUPPORT */
 	[FIP_IMAGE_ID] = {
 		&memmap_dev_handle,
 		(uintptr_t)&fip_block_spec,
@@ -111,6 +166,11 @@ struct plat_io_policy policies[MAX_NUMBER_IDS] = {
 		(uintptr_t)&arm_uuid_spec[BL33_IMAGE_ID],
 		open_fip
 	},
+	[RMM_IMAGE_ID] = {
+		&fip_dev_handle,
+		(uintptr_t)&arm_uuid_spec[RMM_IMAGE_ID],
+		open_fip
+	},
 	[HW_CONFIG_ID] = {
 		&fip_dev_handle,
 		(uintptr_t)&arm_uuid_spec[HW_CONFIG_ID],
@@ -139,6 +199,21 @@ struct plat_io_policy policies[MAX_NUMBER_IDS] = {
 		open_fip
 	},
 #if !ARM_IO_IN_DTB
+	[CCA_CONTENT_CERT_ID] = {
+		&fip_dev_handle,
+		(uintptr_t)&arm_uuid_spec[CCA_CONTENT_CERT_ID],
+		open_fip
+	},
+	[CORE_SWD_KEY_CERT_ID] = {
+		&fip_dev_handle,
+		(uintptr_t)&arm_uuid_spec[CORE_SWD_KEY_CERT_ID],
+		open_fip
+	},
+	[PLAT_KEY_CERT_ID] = {
+		&fip_dev_handle,
+		(uintptr_t)&arm_uuid_spec[PLAT_KEY_CERT_ID],
+		open_fip
+	},
 	[TRUSTED_KEY_CERT_ID] = {
 		&fip_dev_handle,
 		(uintptr_t)&arm_uuid_spec[TRUSTED_KEY_CERT_ID],
@@ -203,7 +278,7 @@ struct plat_io_policy policies[MAX_NUMBER_IDS] = {
 #ifdef IMAGE_BL2
 
 #if TRUSTED_BOARD_BOOT
-#define FCONF_ARM_IO_UUID_NUMBER	U(21)
+#define FCONF_ARM_IO_UUID_NUMBER	U(24)
 #else
 #define FCONF_ARM_IO_UUID_NUMBER	U(10)
 #endif
@@ -229,6 +304,9 @@ static const struct policies_load_info load_info[FCONF_ARM_IO_UUID_NUMBER] = {
 	{TOS_FW_CONFIG_ID, "tos_fw_cfg_uuid"},
 	{NT_FW_CONFIG_ID, "nt_fw_cfg_uuid"},
 #if TRUSTED_BOARD_BOOT
+	{CCA_CONTENT_CERT_ID, "cca_cert_uuid"},
+	{CORE_SWD_KEY_CERT_ID, "core_swd_cert_uuid"},
+	{PLAT_KEY_CERT_ID, "plat_cert_uuid"},
 	{TRUSTED_KEY_CERT_ID, "t_key_cert_uuid"},
 	{SCP_FW_KEY_CERT_ID, "scp_fw_key_uuid"},
 	{SOC_FW_KEY_CERT_ID, "soc_fw_key_uuid"},
@@ -249,7 +327,6 @@ int fconf_populate_arm_io_policies(uintptr_t config)
 {
 	int err, node;
 	unsigned int i;
-	unsigned int j;
 
 	union uuid_helper_t uuid_helper;
 	io_uuid_spec_t *uuid_ptr;
@@ -268,26 +345,26 @@ int fconf_populate_arm_io_policies(uintptr_t config)
 	/* Locate the uuid cells and read the value for all the load info uuid */
 	for (i = 0; i < FCONF_ARM_IO_UUID_NUMBER; i++) {
 		uuid_ptr = pool_alloc(&fconf_arm_uuids_pool);
-		err = fdt_read_uint32_array(dtb, node, load_info[i].name,
-					    4, uuid_helper.word);
+		err = fdtw_read_uuid(dtb, node, load_info[i].name, 16,
+				     (uint8_t *)&uuid_helper);
 		if (err < 0) {
 			WARN("FCONF: Read cell failed for %s\n", load_info[i].name);
 			return err;
 		}
 
-		/* Convert uuid from big endian to little endian */
-		for (j = 0U; j < 4U; j++) {
-			uuid_helper.word[j] =
-				((uuid_helper.word[j] >> 24U) & 0xff) |
-				((uuid_helper.word[j] << 8U) & 0xff0000) |
-				((uuid_helper.word[j] >> 8U) & 0xff00) |
-				((uuid_helper.word[j] << 24U) & 0xff000000);
-		}
-
-		VERBOSE("FCONF: arm-io_policies.%s cell found with value = 0x%x 0x%x 0x%x 0x%x\n",
+		VERBOSE("FCONF: arm-io_policies.%s cell found with value = "
+			"%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x\n",
 			load_info[i].name,
-			uuid_helper.word[0], uuid_helper.word[1],
-			uuid_helper.word[2], uuid_helper.word[3]);
+			uuid_helper.uuid_struct.time_low[0], uuid_helper.uuid_struct.time_low[1],
+			uuid_helper.uuid_struct.time_low[2], uuid_helper.uuid_struct.time_low[3],
+			uuid_helper.uuid_struct.time_mid[0], uuid_helper.uuid_struct.time_mid[1],
+			uuid_helper.uuid_struct.time_hi_and_version[0],
+			uuid_helper.uuid_struct.time_hi_and_version[1],
+			uuid_helper.uuid_struct.clock_seq_hi_and_reserved,
+			uuid_helper.uuid_struct.clock_seq_low,
+			uuid_helper.uuid_struct.node[0], uuid_helper.uuid_struct.node[1],
+			uuid_helper.uuid_struct.node[2], uuid_helper.uuid_struct.node[3],
+			uuid_helper.uuid_struct.node[4], uuid_helper.uuid_struct.node[5]);
 
 		uuid_ptr->uuid = uuid_helper.uuid_struct;
 		policies[load_info[i].image_id].image_spec = (uintptr_t)uuid_ptr;

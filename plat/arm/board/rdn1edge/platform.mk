@@ -4,6 +4,8 @@
 # SPDX-License-Identifier: BSD-3-Clause
 #
 
+$(warning Platform ${PLAT} is deprecated. Some of the features might not work as expected)
+
 # GIC-600 configuration
 GICV3_IMPL_GIC600_MULTICHIP	:=	1
 
@@ -14,6 +16,8 @@ RDN1EDGE_BASE		=	plat/arm/board/rdn1edge
 PLAT_INCLUDES		+=	-I${RDN1EDGE_BASE}/include/
 
 SGI_CPU_SOURCES		:=	lib/cpus/aarch64/neoverse_n1.S
+
+PLAT_BL_COMMON_SOURCES	+=	${CSS_ENT_BASE}/sgi_plat.c
 
 BL1_SOURCES		+=	${SGI_CPU_SOURCES}			\
 				${RDN1EDGE_BASE}/rdn1edge_err.c
@@ -61,6 +65,11 @@ $(eval $(call CREATE_SEQ,SEQ,2))
 ifneq ($(CSS_SGI_CHIP_COUNT),$(filter $(CSS_SGI_CHIP_COUNT),$(SEQ)))
  $(error  "Chip count for RDN1Edge platform should be one of $(SEQ), currently \
    set to ${CSS_SGI_CHIP_COUNT}.")
+endif
+
+ifneq ($(CSS_SGI_PLATFORM_VARIANT),0)
+ $(error "CSS_SGI_PLATFORM_VARIANT for RD-N1-Edge should always be 0, \
+     currently set to ${CSS_SGI_PLATFORM_VARIANT}.")
 endif
 
 override CTX_INCLUDE_AARCH32_REGS	:= 0

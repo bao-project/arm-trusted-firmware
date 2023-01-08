@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2020, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2018-2022, ARM Limited and Contributors. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -9,7 +9,8 @@
 
 #include <lib/utils_def.h>
 
-#include <sgi_base_platform_def.h>
+#include <sgi_sdei.h>
+#include <sgi_soc_platform_def.h>
 
 #define PLAT_ARM_CLUSTER_COUNT		U(2)
 #define CSS_SGI_MAX_CPUS_PER_CLUSTER	U(4)
@@ -26,12 +27,15 @@
 
 #define PLAT_MAX_PWR_LVL		ARM_PWR_LVL1
 
+/* Maximum number of address bits used per chip */
+#define CSS_SGI_ADDR_BITS_PER_CHIP	U(36)
+
 /*
  * Physical and virtual address space limits for MMU in AARCH64 & AARCH32 modes
  */
 #ifdef __aarch64__
-#define PLAT_PHY_ADDR_SPACE_SIZE	(1ULL << 36)
-#define PLAT_VIRT_ADDR_SPACE_SIZE	(1ULL << 36)
+#define PLAT_PHY_ADDR_SPACE_SIZE	(1ULL << CSS_SGI_ADDR_BITS_PER_CHIP)
+#define PLAT_VIRT_ADDR_SPACE_SIZE	(1ULL << CSS_SGI_ADDR_BITS_PER_CHIP)
 #else
 #define PLAT_PHY_ADDR_SPACE_SIZE	(1ULL << 32)
 #define PLAT_VIRT_ADDR_SPACE_SIZE	(1ULL << 32)

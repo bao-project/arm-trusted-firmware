@@ -8,6 +8,8 @@
 /* Marvell CP110 SoC COMPHY unit driver */
 
 #include <errno.h>
+#include <inttypes.h>
+#include <stdint.h>
 
 #include <common/debug.h>
 #include <drivers/delay_timer.h>
@@ -30,7 +32,7 @@
 /* COMPHY speed macro */
 #define COMPHY_SPEED_1_25G		0 /* SGMII 1G */
 #define COMPHY_SPEED_2_5G		1
-#define COMPHY_SPEED_3_125G		2 /* SGMII 2.5G */
+#define COMPHY_SPEED_3_125G		2 /* 2500Base-X */
 #define COMPHY_SPEED_5G			3
 #define COMPHY_SPEED_5_15625G		4 /* XFI 5G */
 #define COMPHY_SPEED_6G			5
@@ -53,14 +55,19 @@
 #define SYS_CTRL_FROM_COMPHY_ADDR(x)	((x & ~0xffffff) + 0x440000)
 
 /* DFX register spaces */
-#define SAR_RST_PCIE0_CLOCK_CONFIG_CP1_OFFSET	(0)
-#define SAR_RST_PCIE0_CLOCK_CONFIG_CP1_MASK	(0x1 << \
-					SAR_RST_PCIE0_CLOCK_CONFIG_CP1_OFFSET)
-#define SAR_RST_PCIE1_CLOCK_CONFIG_CP1_OFFSET	(1)
-#define SAR_RST_PCIE1_CLOCK_CONFIG_CP1_MASK	(0x1 << \
-					SAR_RST_PCIE1_CLOCK_CONFIG_CP1_OFFSET)
-#define SAR_STATUS_0_REG			200
+#define SAR_RST_PCIE0_CLOCK_CONFIG_CP0_OFFSET	(30)
+#define SAR_RST_PCIE0_CLOCK_CONFIG_CP0_MASK	(0x1UL << \
+					SAR_RST_PCIE0_CLOCK_CONFIG_CP0_OFFSET)
+#define SAR_RST_PCIE1_CLOCK_CONFIG_CP0_OFFSET	(31)
+#define SAR_RST_PCIE1_CLOCK_CONFIG_CP0_MASK	(0x1UL << \
+					SAR_RST_PCIE1_CLOCK_CONFIG_CP0_OFFSET)
+#define SAR_STATUS_0_REG			0x40600
 #define DFX_FROM_COMPHY_ADDR(x)			((x & ~0xffffff) + DFX_BASE)
+/* Common Phy training  */
+#define COMPHY_TRX_TRAIN_COMPHY_OFFS		0x1000
+#define COMPHY_TRX_TRAIN_RX_TRAIN_ENABLE	0x1
+#define COMPHY_TRX_RELATIVE_ADDR(comphy_index)	(comphy_train_base + \
+			(comphy_index) * COMPHY_TRX_TRAIN_COMPHY_OFFS)
 
 /* The same Units Soft Reset Config register are accessed in all PCIe ports
  * initialization, so a spin lock is defined in case when more than 1 CPUs
@@ -97,7 +104,7 @@ static void mvebu_cp110_get_ap_and_cp_nr(uint8_t *ap_nr, uint8_t *cp_nr,
 	*cp_nr = (((comphy_base & ~0xffffff) - MVEBU_AP_IO_BASE(*ap_nr)) /
 		 MVEBU_CP_OFFSET);
 
-	debug("cp_base 0x%llx, ap_io_base 0x%lx, cp_offset 0x%lx\n",
+	debug("cp_base 0x%" PRIx64 ", ap_io_base 0x%lx, cp_offset 0x%lx\n",
 	       comphy_base, (unsigned long)MVEBU_AP_IO_BASE(*ap_nr),
 	       (unsigned long)MVEBU_CP_OFFSET);
 }
@@ -186,7 +193,7 @@ static void mvebu_cp110_comphy_set_phy_selector(uint64_t comphy_base,
 		case(3):
 			/* For comphy 3:
 			 * 0x1 = RXAUI_Lane1
-			 * 0x2 = SGMII/HS-SGMII Port1
+			 * 0x2 = SGMII/Base-X Port1
 			 */
 			if (mode == COMPHY_RXAUI_MODE)
 				reg |= COMMON_SELECTOR_COMPHY3_RXAUI <<
@@ -197,20 +204,20 @@ static void mvebu_cp110_comphy_set_phy_selector(uint64_t comphy_base,
 			break;
 		case(4):
 			 /* For comphy 4:
-			  * 0x1 = SGMII/HS-SGMII Port1, XFI1/SFI1
-			  * 0x2 = SGMII/HS-SGMII Port0: XFI0/SFI0, RXAUI_Lane0
+			  * 0x1 = SGMII/Base-X Port1, XFI1/SFI1
+			  * 0x2 = SGMII/Base-X Port0: XFI0/SFI0, RXAUI_Lane0
 			  *
-			  * We want to check if SGMII1/HS_SGMII1 is the
+			  * We want to check if SGMII1 is the
 			  * requested mode in order to determine which value
 			  * should be set (all other modes use the same value)
 			  * so we need to strip the mode, and check the ID
-			  * because we might handle SGMII0/HS_SGMII0 too.
+			  * because we might handle SGMII0 too.
 			  */
 			  /* TODO: need to distinguish between CP110 and CP115
 			   * as SFI1/XFI1 available only for CP115.
 			   */
 			if ((mode == COMPHY_SGMII_MODE ||
-			     mode == COMPHY_HS_SGMII_MODE ||
+			     mode == COMPHY_2500BASEX_MODE ||
 			     mode == COMPHY_SFI_MODE ||
 			     mode == COMPHY_XFI_MODE ||
 			     mode == COMPHY_AP_MODE)
@@ -223,7 +230,7 @@ static void mvebu_cp110_comphy_set_phy_selector(uint64_t comphy_base,
 			break;
 		case(5):
 			/* For comphy 5:
-			 * 0x1 = SGMII/HS-SGMII Port2
+			 * 0x1 = SGMII/Base-X Port2
 			 * 0x2 = RXAUI Lane1
 			 */
 			if (mode == COMPHY_RXAUI_MODE)
@@ -708,7 +715,7 @@ static int mvebu_cp110_comphy_sgmii_power_on(uint64_t comphy_base,
 		data |= 0x6 << SD_EXTERNAL_CONFIG0_SD_PHY_GEN_RX_OFFSET;
 		data |= 0x6 << SD_EXTERNAL_CONFIG0_SD_PHY_GEN_TX_OFFSET;
 	} else if (sgmii_speed == COMPHY_SPEED_3_125G) {
-		/* HS SGMII (2.5G), SerDes speed 3.125G */
+		/* 2500Base-X, SerDes speed 3.125G */
 		data |= 0x8 << SD_EXTERNAL_CONFIG0_SD_PHY_GEN_RX_OFFSET;
 		data |= 0x8 << SD_EXTERNAL_CONFIG0_SD_PHY_GEN_TX_OFFSET;
 	} else {
@@ -829,7 +836,8 @@ static int mvebu_cp110_comphy_sgmii_power_on(uint64_t comphy_base,
 
 static int mvebu_cp110_comphy_xfi_power_on(uint64_t comphy_base,
 					   uint8_t comphy_index,
-					   uint32_t comphy_mode)
+					   uint32_t comphy_mode,
+					   uint64_t comphy_train_base)
 {
 	uintptr_t hpipe_addr, sd_ip_addr, comphy_addr, addr;
 	uint32_t mask, data, speed = COMPHY_GET_SPEED(comphy_mode);
@@ -837,7 +845,6 @@ static int mvebu_cp110_comphy_xfi_power_on(uint64_t comphy_base,
 	uint8_t ap_nr, cp_nr;
 
 	debug_enter();
-
 	mvebu_cp110_get_ap_and_cp_nr(&ap_nr, &cp_nr, comphy_base);
 
 	if (rx_trainng_done[ap_nr][cp_nr][comphy_index]) {
@@ -1234,6 +1241,14 @@ static int mvebu_cp110_comphy_xfi_power_on(uint64_t comphy_base,
 	data |= 0x1 << SD_EXTERNAL_CONFIG1_RF_RESET_IN_OFFSET;
 	reg_set(sd_ip_addr + SD_EXTERNAL_CONFIG1_REG, data, mask);
 
+	/* Force rx training on 10G port */
+	data = mmio_read_32(COMPHY_TRX_RELATIVE_ADDR(comphy_index));
+	data |= COMPHY_TRX_TRAIN_RX_TRAIN_ENABLE;
+	mmio_write_32(COMPHY_TRX_RELATIVE_ADDR(comphy_index), data);
+	mdelay(200);
+	data &= ~COMPHY_TRX_TRAIN_RX_TRAIN_ENABLE;
+	mmio_write_32(COMPHY_TRX_RELATIVE_ADDR(comphy_index), data);
+
 	debug_exit();
 
 	return ret;
@@ -1305,11 +1320,11 @@ static int mvebu_cp110_comphy_pcie_power_on(uint64_t comphy_base,
 	reg = mmio_read_32(DFX_FROM_COMPHY_ADDR(comphy_base) +
 			   SAR_STATUS_0_REG);
 	if (comphy_index == COMPHY_LANE4 || comphy_index == COMPHY_LANE5)
-		clk_dir = (reg & SAR_RST_PCIE1_CLOCK_CONFIG_CP1_MASK) >>
-					  SAR_RST_PCIE1_CLOCK_CONFIG_CP1_OFFSET;
+		clk_dir = (reg & SAR_RST_PCIE1_CLOCK_CONFIG_CP0_MASK) >>
+					  SAR_RST_PCIE1_CLOCK_CONFIG_CP0_OFFSET;
 	else
-		clk_dir = (reg & SAR_RST_PCIE0_CLOCK_CONFIG_CP1_MASK) >>
-					  SAR_RST_PCIE0_CLOCK_CONFIG_CP1_OFFSET;
+		clk_dir = (reg & SAR_RST_PCIE0_CLOCK_CONFIG_CP0_MASK) >>
+					  SAR_RST_PCIE0_CLOCK_CONFIG_CP0_OFFSET;
 
 	debug("On lane %d\n", comphy_index);
 	debug("PCIe clock direction = %x\n", clk_dir);
@@ -1717,11 +1732,13 @@ static int mvebu_cp110_comphy_pcie_power_on(uint64_t comphy_base,
 				HPIPE_LANE_STATUS1_REG;
 			data = HPIPE_LANE_STATUS1_PCLK_EN_MASK;
 			mask = data;
-			ret = polling_with_timeout(addr, data, mask,
+			data = polling_with_timeout(addr, data, mask,
 						   PLL_LOCK_TIMEOUT,
 						   REG_32BIT);
-			if (ret)
+			if (data) {
 				ERROR("Failed to lock PCIE PLL\n");
+				ret = -ETIMEDOUT;
+			}
 		}
 	}
 
@@ -2284,7 +2301,6 @@ static int mvebu_cp110_comphy_ap_power_on(uint64_t comphy_base,
 					  uint32_t comphy_mode)
 {
 	uint32_t mask, data;
-	uint8_t ap_nr, cp_nr;
 	uintptr_t comphy_addr = comphy_addr =
 				COMPHY_ADDR(comphy_base, comphy_index);
 
@@ -2301,10 +2317,16 @@ static int mvebu_cp110_comphy_ap_power_on(uint64_t comphy_base,
 	reg_set(comphy_addr + COMMON_PHY_CFG1_REG, data, mask);
 	debug_exit();
 
-	/* Start AP Firmware */
-	mvebu_cp110_get_ap_and_cp_nr(&ap_nr, &cp_nr, comphy_base);
-	mg_start_ap_fw(cp_nr, comphy_index);
+#if MSS_SUPPORT
+	do {
+		uint8_t ap_nr, cp_nr;
 
+		/* start ap fw */
+		mvebu_cp110_get_ap_and_cp_nr(&ap_nr, &cp_nr, comphy_base);
+		mg_start_ap_fw(cp_nr, comphy_index);
+
+	} while (0);
+#endif
 	return 0;
 }
 
@@ -2325,7 +2347,7 @@ int mvebu_cp110_comphy_digital_reset(uint64_t comphy_base,
 
 	switch (mode) {
 	case (COMPHY_SGMII_MODE):
-	case (COMPHY_HS_SGMII_MODE):
+	case (COMPHY_2500BASEX_MODE):
 	case (COMPHY_XFI_MODE):
 	case (COMPHY_SFI_MODE):
 	case (COMPHY_RXAUI_MODE):
@@ -2343,8 +2365,10 @@ int mvebu_cp110_comphy_digital_reset(uint64_t comphy_base,
 	return 0;
 }
 
-int mvebu_cp110_comphy_power_on(uint64_t comphy_base, uint8_t comphy_index,
-				uint64_t comphy_mode)
+int mvebu_cp110_comphy_power_on(uint64_t comphy_base,
+				uint8_t comphy_index,
+				uint64_t comphy_mode,
+				uint64_t comphy_train_base)
 {
 	int mode = COMPHY_GET_MODE(comphy_mode);
 	int err = 0;
@@ -2358,7 +2382,7 @@ int mvebu_cp110_comphy_power_on(uint64_t comphy_base, uint8_t comphy_index,
 						       comphy_mode);
 		break;
 	case(COMPHY_SGMII_MODE):
-	case(COMPHY_HS_SGMII_MODE):
+	case(COMPHY_2500BASEX_MODE):
 		err = mvebu_cp110_comphy_sgmii_power_on(comphy_base,
 							comphy_index,
 							comphy_mode);
@@ -2368,7 +2392,8 @@ int mvebu_cp110_comphy_power_on(uint64_t comphy_base, uint8_t comphy_index,
 	case (COMPHY_SFI_MODE):
 		err = mvebu_cp110_comphy_xfi_power_on(comphy_base,
 						      comphy_index,
-						      comphy_mode);
+						      comphy_mode,
+						      comphy_train_base);
 		break;
 	case (COMPHY_PCIE_MODE):
 		err = mvebu_cp110_comphy_pcie_power_on(comphy_base,

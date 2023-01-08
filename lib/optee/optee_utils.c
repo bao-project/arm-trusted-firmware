@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2020, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2017-2022, ARM Limited and Contributors. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -8,6 +8,8 @@
 
 #include <common/debug.h>
 #include <lib/optee_utils.h>
+
+#include <platform_def.h>
 
 /*
  * load_addr_hi and load_addr_lo: image load address.
@@ -47,25 +49,24 @@ typedef struct optee_header {
 
 /*******************************************************************************
  * Check if it is a valid tee header
- * Return 1 if valid
- * Return 0 if invalid
+ * Return true if valid
+ * Return false if invalid
  ******************************************************************************/
-static inline int tee_validate_header(optee_header_t *header)
+static bool tee_validate_header(optee_header_t *header)
 {
-	int valid = 0;
-
 	if ((header->magic == TEE_MAGIC_NUM_OPTEE) &&
 		(header->version == 2u) &&
 		(header->nb_images > 0u) &&
 		(header->nb_images <= OPTEE_MAX_NUM_IMAGES)) {
-		valid = 1;
+		return true;
 	}
 
-	else {
-		WARN("Not a known TEE, use default loading options.\n");
-	}
+	return false;
+}
 
-	return valid;
+bool optee_header_is_valid(uintptr_t header_base)
+{
+	return tee_validate_header((optee_header_t *)header_base);
 }
 
 /*******************************************************************************
@@ -83,11 +84,14 @@ static int parse_optee_image(image_info_t *image_info,
 	init_size = image->size;
 
 	/*
-	 * -1 indicates loader decided address; take our pre-mapped area
-	 * for current image since arm-tf could not allocate memory dynamically
+	 * image->load_addr_hi & image->load_addr_lo set to UINT32_MAX indicate
+	 * loader decided address; take our pre-mapped area for current image
+	 * since arm-tf could not allocate memory dynamically
 	 */
-	if (init_load_addr == -1)
+	if ((image->load_addr_hi == UINT32_MAX) &&
+	    (image->load_addr_lo == UINT32_MAX)) {
 		init_load_addr = image_info->image_base;
+	}
 
 	/* Check that the default end address doesn't overflow */
 	if (check_uptr_overflow(image_info->image_base,
@@ -139,7 +143,8 @@ int parse_optee_header(entry_point_info_t *header_ep,
 
 {
 	optee_header_t *header;
-	int num, ret;
+	uint32_t num;
+	int ret;
 
 	assert(header_ep);
 	header = (optee_header_t *)header_ep->pc;
@@ -182,15 +187,24 @@ int parse_optee_header(entry_point_info_t *header_ep,
 	}
 
 	/* Parse OPTEE image */
-	for (num = 0; num < header->nb_images; num++) {
+	for (num = 0U; num < header->nb_images; num++) {
 		if (header->optee_image_list[num].image_id ==
 				OPTEE_PAGER_IMAGE_ID) {
 			ret = parse_optee_image(pager_image_info,
 				&header->optee_image_list[num]);
 		} else if (header->optee_image_list[num].image_id ==
 				OPTEE_PAGED_IMAGE_ID) {
-			ret = parse_optee_image(paged_image_info,
-				&header->optee_image_list[num]);
+			if (paged_image_info == NULL) {
+				if (header->optee_image_list[num].size != 0U) {
+					ERROR("Paged image is not supported\n");
+					return -1;
+				}
+
+				continue;
+			} else {
+				ret = parse_optee_image(paged_image_info,
+							&header->optee_image_list[num]);
+			}
 		} else {
 			ERROR("Parse optee image failed.\n");
 			return -1;
@@ -212,8 +226,10 @@ int parse_optee_header(entry_point_info_t *header_ep,
 	 * header image arguments so that can be read by the
 	 * BL32 SPD.
 	 */
-	header_ep->args.arg1 = paged_image_info->image_base;
-	header_ep->args.arg2 = paged_image_info->image_size;
+	if (paged_image_info != NULL) {
+		header_ep->args.arg1 = paged_image_info->image_base;
+		header_ep->args.arg2 = paged_image_info->image_size;
+	}
 
 	/* Set OPTEE runtime arch - aarch32/aarch64 */
 	if (header->arch == 0) {

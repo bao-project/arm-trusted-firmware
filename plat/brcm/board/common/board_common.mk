@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2015 - 2020, Broadcom
+# Copyright (c) 2015 - 2021, Broadcom
 #
 # SPDX-License-Identifier: BSD-3-Clause
 #
@@ -34,6 +34,10 @@ endif
 
 ifeq (${DRIVER_SPI_ENABLE},)
 DRIVER_SPI_ENABLE := 0
+endif
+
+ifeq (${DRIVER_I2C_ENABLE},)
+DRIVER_I2C_ENABLE := 0
 endif
 
 # By default, Trusted Watchdog is always enabled unless SPIN_ON_BL1_EXIT is set
@@ -114,7 +118,8 @@ USE_TBBR_DEFS			:=	1
 
 PLAT_INCLUDES		+=	-Iplat/brcm/board/common \
 				-Iinclude/drivers/brcm \
-				-Iinclude/drivers/brcm/emmc
+				-Iinclude/drivers/brcm/emmc \
+				-Iinclude/drivers/brcm/mdio
 
 PLAT_BL_COMMON_SOURCES	+=	plat/brcm/common/brcm_common.c \
 				plat/brcm/board/common/cmn_sec.c \
@@ -181,6 +186,12 @@ PLAT_BL_COMMON_SOURCES	+=	drivers/brcm/spi_sf.c \
 				drivers/brcm/spi_flash.c
 endif
 
+ifeq (${DRIVER_I2C_ENABLE},1)
+$(eval $(call add_define,DRIVER_I2C_ENABLE))
+BL2_SOURCES		+= 	drivers/brcm/i2c/i2c.c
+PLAT_INCLUDES		+=	-Iinclude/drivers/brcm/i2c
+endif
+
 ifeq (${DRIVER_OCOTP_ENABLE},1)
 $(eval $(call add_define,DRIVER_OCOTP_ENABLE))
 BL2_SOURCES		+= drivers/brcm/ocotp.c
@@ -203,14 +214,12 @@ endif
 endif
 
 # Include mbedtls if it can be located
-MBEDTLS_DIR := mbedtls
-MBEDTLS_CHECK := $(shell find ${MBEDTLS_DIR}/include -name '${MBEDTLS_DIR}')
+MBEDTLS_DIR ?= mbedtls
+MBEDTLS_CHECK := $(shell find ${MBEDTLS_DIR}/include -name '$(notdir ${MBEDTLS_DIR})')
 
 ifneq (${MBEDTLS_CHECK},)
 $(info Found mbedTLS at ${MBEDTLS_DIR})
 PLAT_INCLUDES += -I${MBEDTLS_DIR}/include/mbedtls
-# Specify mbedTLS configuration file
-MBEDTLS_CONFIG_FILE	:=	"<brcm_mbedtls_config.h>"
 
 # By default, use RSA keys
 KEY_ALG := rsa_1_5

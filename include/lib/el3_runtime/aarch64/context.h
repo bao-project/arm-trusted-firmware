@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2020, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2013-2022, Arm Limited and Contributors. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -60,7 +60,10 @@
 #define CTX_SPSR_EL3		U(0x18)
 #define CTX_ELR_EL3		U(0x20)
 #define CTX_PMCR_EL0		U(0x28)
-#define CTX_EL3STATE_END	U(0x30)
+#define CTX_IS_IN_EL3		U(0x30)
+#define CTX_CPTR_EL3		U(0x38)
+#define CTX_ZCR_EL3		U(0x40)
+#define CTX_EL3STATE_END	U(0x50) /* Align to the next 16 byte boundary */
 
 /*******************************************************************************
  * Constants that allow assembler code to access members of and the
@@ -159,86 +162,75 @@
 #define CTX_AFSR1_EL2		U(0x10)
 #define CTX_AMAIR_EL2		U(0x18)
 #define CTX_CNTHCTL_EL2		U(0x20)
-#define CTX_CNTHP_CTL_EL2	U(0x28)
-#define CTX_CNTHP_CVAL_EL2	U(0x30)
-#define CTX_CNTHP_TVAL_EL2	U(0x38)
-#define CTX_CNTVOFF_EL2		U(0x40)
-#define CTX_CPTR_EL2		U(0x48)
-#define CTX_DBGVCR32_EL2	U(0x50)
-#define CTX_ELR_EL2		U(0x58)
-#define CTX_ESR_EL2		U(0x60)
-#define CTX_FAR_EL2		U(0x68)
-#define CTX_HACR_EL2		U(0x70)
-#define CTX_HCR_EL2		U(0x78)
-#define CTX_HPFAR_EL2		U(0x80)
-#define CTX_HSTR_EL2		U(0x88)
-#define CTX_ICC_SRE_EL2		U(0x90)
-#define CTX_ICH_HCR_EL2		U(0x98)
-#define CTX_ICH_VMCR_EL2	U(0xa0)
-#define CTX_MAIR_EL2		U(0xa8)
-#define CTX_MDCR_EL2		U(0xb0)
-#define CTX_PMSCR_EL2		U(0xb8)
-#define CTX_SCTLR_EL2		U(0xc0)
-#define CTX_SPSR_EL2		U(0xc8)
-#define CTX_SP_EL2		U(0xd0)
-#define CTX_TCR_EL2		U(0xd8)
-#define CTX_TPIDR_EL2		U(0xe0)
-#define CTX_TTBR0_EL2		U(0xe8)
-#define CTX_VBAR_EL2		U(0xf0)
-#define CTX_VMPIDR_EL2		U(0xf8)
-#define CTX_VPIDR_EL2		U(0x100)
-#define CTX_VTCR_EL2		U(0x108)
-#define CTX_VTTBR_EL2		U(0x110)
+#define CTX_CNTVOFF_EL2		U(0x28)
+#define CTX_CPTR_EL2		U(0x30)
+#define CTX_DBGVCR32_EL2	U(0x38)
+#define CTX_ELR_EL2		U(0x40)
+#define CTX_ESR_EL2		U(0x48)
+#define CTX_FAR_EL2		U(0x50)
+#define CTX_HACR_EL2		U(0x58)
+#define CTX_HCR_EL2		U(0x60)
+#define CTX_HPFAR_EL2		U(0x68)
+#define CTX_HSTR_EL2		U(0x70)
+#define CTX_ICC_SRE_EL2		U(0x78)
+#define CTX_ICH_HCR_EL2		U(0x80)
+#define CTX_ICH_VMCR_EL2	U(0x88)
+#define CTX_MAIR_EL2		U(0x90)
+#define CTX_MDCR_EL2		U(0x98)
+#define CTX_PMSCR_EL2		U(0xa0)
+#define CTX_SCTLR_EL2		U(0xa8)
+#define CTX_SPSR_EL2		U(0xb0)
+#define CTX_SP_EL2		U(0xb8)
+#define CTX_TCR_EL2		U(0xc0)
+#define CTX_TPIDR_EL2		U(0xc8)
+#define CTX_TTBR0_EL2		U(0xd0)
+#define CTX_VBAR_EL2		U(0xd8)
+#define CTX_VMPIDR_EL2		U(0xe0)
+#define CTX_VPIDR_EL2		U(0xe8)
+#define CTX_VTCR_EL2		U(0xf0)
+#define CTX_VTTBR_EL2		U(0xf8)
 
 // Only if MTE registers in use
-#define CTX_TFSR_EL2		U(0x118)
+#define CTX_TFSR_EL2		U(0x100)
 
 // Only if ENABLE_MPAM_FOR_LOWER_ELS==1
-#define CTX_MPAM2_EL2		U(0x120)
-#define CTX_MPAMHCR_EL2		U(0x128)
-#define CTX_MPAMVPM0_EL2	U(0x130)
-#define CTX_MPAMVPM1_EL2	U(0x138)
-#define CTX_MPAMVPM2_EL2	U(0x140)
-#define CTX_MPAMVPM3_EL2	U(0x148)
-#define CTX_MPAMVPM4_EL2	U(0x150)
-#define CTX_MPAMVPM5_EL2	U(0x158)
-#define CTX_MPAMVPM6_EL2	U(0x160)
-#define CTX_MPAMVPM7_EL2	U(0x168)
-#define CTX_MPAMVPMV_EL2	U(0x170)
+#define CTX_MPAM2_EL2		U(0x108)
+#define CTX_MPAMHCR_EL2		U(0x110)
+#define CTX_MPAMVPM0_EL2	U(0x118)
+#define CTX_MPAMVPM1_EL2	U(0x120)
+#define CTX_MPAMVPM2_EL2	U(0x128)
+#define CTX_MPAMVPM3_EL2	U(0x130)
+#define CTX_MPAMVPM4_EL2	U(0x138)
+#define CTX_MPAMVPM5_EL2	U(0x140)
+#define CTX_MPAMVPM6_EL2	U(0x148)
+#define CTX_MPAMVPM7_EL2	U(0x150)
+#define CTX_MPAMVPMV_EL2	U(0x158)
 
 // Starting with Armv8.6
-#define CTX_HAFGRTR_EL2		U(0x178)
-#define CTX_HDFGRTR_EL2		U(0x180)
-#define CTX_HDFGWTR_EL2		U(0x188)
-#define CTX_HFGITR_EL2		U(0x190)
-#define CTX_HFGRTR_EL2		U(0x198)
-#define CTX_HFGWTR_EL2		U(0x1a0)
-#define CTX_CNTPOFF_EL2		U(0x1a8)
+#define CTX_HDFGRTR_EL2		U(0x160)
+#define CTX_HAFGRTR_EL2		U(0x168)
+#define CTX_HDFGWTR_EL2		U(0x170)
+#define CTX_HFGITR_EL2		U(0x178)
+#define CTX_HFGRTR_EL2		U(0x180)
+#define CTX_HFGWTR_EL2		U(0x188)
+#define CTX_CNTPOFF_EL2		U(0x190)
 
 // Starting with Armv8.4
-#define CTX_CNTHPS_CTL_EL2	U(0x1b0)
-#define CTX_CNTHPS_CVAL_EL2	U(0x1b8)
-#define CTX_CNTHPS_TVAL_EL2	U(0x1c0)
-#define CTX_CNTHVS_CTL_EL2	U(0x1c8)
-#define CTX_CNTHVS_CVAL_EL2	U(0x1d0)
-#define CTX_CNTHVS_TVAL_EL2	U(0x1d8)
-#define CTX_CNTHV_CTL_EL2	U(0x1e0)
-#define CTX_CNTHV_CVAL_EL2	U(0x1e8)
-#define CTX_CNTHV_TVAL_EL2	U(0x1f0)
-#define CTX_CONTEXTIDR_EL2	U(0x1f8)
-#define CTX_SDER32_EL2		U(0x200)
-#define CTX_TTBR1_EL2		U(0x208)
-#define CTX_VDISR_EL2		U(0x210)
-#define CTX_VNCR_EL2		U(0x218)
-#define CTX_VSESR_EL2		U(0x220)
-#define CTX_VSTCR_EL2		U(0x228)
-#define CTX_VSTTBR_EL2		U(0x230)
-#define CTX_TRFCR_EL2		U(0x238)
+#define CTX_CONTEXTIDR_EL2	U(0x198)
+#define CTX_TTBR1_EL2		U(0x1a0)
+#define CTX_VDISR_EL2		U(0x1a8)
+#define CTX_VSESR_EL2		U(0x1b0)
+#define CTX_VNCR_EL2		U(0x1b8)
+#define CTX_TRFCR_EL2		U(0x1c0)
 
 // Starting with Armv8.5
-#define CTX_SCXTNUM_EL2		U(0x240)
+#define CTX_SCXTNUM_EL2		U(0x1c8)
+
+// Register for FEAT_HCX
+#define CTX_HCRX_EL2            U(0x1d0)
+
 /* Align to the next 16 byte boundary */
-#define CTX_EL2_SYSREGS_END	U(0x250)
+#define CTX_EL2_SYSREGS_END	U(0x1e0)
 
 #endif /* CTX_INCLUDE_EL2_REGS */
 
@@ -410,13 +402,12 @@ DEFINE_REG_STRUCT(pauth, CTX_PAUTH_REGS_ALL);
 					 = (uint64_t) (val))
 
 /*
- * Top-level context structure which is used by EL3 firmware to
- * preserve the state of a core at EL1 in one of the two security
- * states and save enough EL3 meta data to be able to return to that
- * EL and security state. The context management library will be used
- * to ensure that SP_EL3 always points to an instance of this
- * structure at exception entry and exit. Each instance will
- * correspond to either the secure or the non-secure state.
+ * Top-level context structure which is used by EL3 firmware to preserve
+ * the state of a core at the next lower EL in a given security state and
+ * save enough EL3 meta data to be able to return to that EL and security
+ * state. The context management library will be used to ensure that
+ * SP_EL3 always points to an instance of this structure at exception
+ * entry and exit.
  */
 typedef struct cpu_context {
 	gp_regs_t gpregs_ctx;
@@ -518,9 +509,53 @@ void el1_sysregs_context_save(el1_sysregs_t *regs);
 void el1_sysregs_context_restore(el1_sysregs_t *regs);
 
 #if CTX_INCLUDE_EL2_REGS
-void el2_sysregs_context_save(el2_sysregs_t *regs);
-void el2_sysregs_context_restore(el2_sysregs_t *regs);
-#endif
+void el2_sysregs_context_save_common(el2_sysregs_t *regs);
+void el2_sysregs_context_restore_common(el2_sysregs_t *regs);
+#if ENABLE_SPE_FOR_LOWER_ELS
+void el2_sysregs_context_save_spe(el2_sysregs_t *regs);
+void el2_sysregs_context_restore_spe(el2_sysregs_t *regs);
+#endif /* ENABLE_SPE_FOR_LOWER_ELS */
+#if CTX_INCLUDE_MTE_REGS
+void el2_sysregs_context_save_mte(el2_sysregs_t *regs);
+void el2_sysregs_context_restore_mte(el2_sysregs_t *regs);
+#endif /* CTX_INCLUDE_MTE_REGS */
+#if ENABLE_MPAM_FOR_LOWER_ELS
+void el2_sysregs_context_save_mpam(el2_sysregs_t *regs);
+void el2_sysregs_context_restore_mpam(el2_sysregs_t *regs);
+#endif /* ENABLE_MPAM_FOR_LOWER_ELS */
+#if ENABLE_FEAT_FGT
+void el2_sysregs_context_save_fgt(el2_sysregs_t *regs);
+void el2_sysregs_context_restore_fgt(el2_sysregs_t *regs);
+#endif /* ENABLE_FEAT_FGT */
+#if ENABLE_FEAT_ECV
+void el2_sysregs_context_save_ecv(el2_sysregs_t *regs);
+void el2_sysregs_context_restore_ecv(el2_sysregs_t *regs);
+#endif /* ENABLE_FEAT_ECV */
+#if ENABLE_FEAT_VHE
+void el2_sysregs_context_save_vhe(el2_sysregs_t *regs);
+void el2_sysregs_context_restore_vhe(el2_sysregs_t *regs);
+#endif /* ENABLE_FEAT_VHE */
+#if RAS_EXTENSION
+void el2_sysregs_context_save_ras(el2_sysregs_t *regs);
+void el2_sysregs_context_restore_ras(el2_sysregs_t *regs);
+#endif /* RAS_EXTENSION */
+#if CTX_INCLUDE_NEVE_REGS
+void el2_sysregs_context_save_nv2(el2_sysregs_t *regs);
+void el2_sysregs_context_restore_nv2(el2_sysregs_t *regs);
+#endif /* CTX_INCLUDE_NEVE_REGS */
+#if ENABLE_TRF_FOR_NS
+void el2_sysregs_context_save_trf(el2_sysregs_t *regs);
+void el2_sysregs_context_restore_trf(el2_sysregs_t *regs);
+#endif /* ENABLE_TRF_FOR_NS */
+#if ENABLE_FEAT_CSV2_2
+void el2_sysregs_context_save_csv2(el2_sysregs_t *regs);
+void el2_sysregs_context_restore_csv2(el2_sysregs_t *regs);
+#endif /* ENABLE_FEAT_CSV2_2 */
+#if ENABLE_FEAT_HCX
+void el2_sysregs_context_save_hcx(el2_sysregs_t *regs);
+void el2_sysregs_context_restore_hcx(el2_sysregs_t *regs);
+#endif /* ENABLE_FEAT_HCX */
+#endif /* CTX_INCLUDE_EL2_REGS */
 
 #if CTX_INCLUDE_FPREGS
 void fpregs_context_save(fp_regs_t *regs);

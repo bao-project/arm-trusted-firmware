@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2020, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2014-2021, ARM Limited and Contributors. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -9,7 +9,7 @@
 
 #include <drivers/arm/tzc400.h>
 #if TRUSTED_BOARD_BOOT
-#include <drivers/auth/mbedtls/mbedtls_config.h>
+#include MBEDTLS_CONFIG_FILE
 #endif
 #include <plat/arm/board/common/board_css_def.h>
 #include <plat/arm/board/common/v2m_def.h>
@@ -52,6 +52,15 @@
 
 #define PLAT_ARM_DRAM2_BASE		ULL(0x880000000)
 #define PLAT_ARM_DRAM2_SIZE		ULL(0x180000000)
+
+/* Range of kernel DTB load address */
+#define JUNO_DTB_DRAM_MAP_START		ULL(0x82000000)
+#define JUNO_DTB_DRAM_MAP_SIZE		ULL(0x00008000) /* 32KB */
+
+#define ARM_DTB_DRAM_NS			MAP_REGION_FLAT(		\
+					JUNO_DTB_DRAM_MAP_START,	\
+					JUNO_DTB_DRAM_MAP_SIZE,		\
+					MT_MEMORY | MT_RO | MT_NS)
 
 /* virtual address used by dynamic mem_protect for chunk_base */
 #define PLAT_ARM_MEM_PROTEC_VA_FRAME	UL(0xc0000000)
@@ -108,7 +117,7 @@
 
 #ifdef IMAGE_BL31
 #  define PLAT_ARM_MMAP_ENTRIES		7
-#  define MAX_XLAT_TABLES		3
+#  define MAX_XLAT_TABLES		5
 #endif
 
 #ifdef IMAGE_BL32
@@ -186,12 +195,6 @@
 #elif defined(IMAGE_BL32)
 # define PLATFORM_STACK_SIZE		UL(0x440)
 #endif
-
-/*
- * Since free SRAM space is scant, enable the ASSERTION message size
- * optimization by fixing the PLAT_LOG_LEVEL_ASSERT to LOG_LEVEL_INFO (40).
- */
-#define PLAT_LOG_LEVEL_ASSERT		40
 
 /* CCI related constants */
 #define PLAT_ARM_CCI_BASE		UL(0x2c090000)

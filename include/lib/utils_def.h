@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2020, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2016-2022, ARM Limited and Contributors. All rights reserved.
  * Copyright (c) 2020, NVIDIA Corporation. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
@@ -104,6 +104,13 @@
 #define round_down(value, boundary)		\
 	((value) & ~round_boundary(value, boundary))
 
+/**
+ * Helper macro to ensure a value lies on a given boundary.
+ */
+#define is_aligned(value, boundary)			\
+	(round_up((uintptr_t) value, boundary) ==	\
+	 round_down((uintptr_t) value, boundary))
+
 /*
  * Evaluates to 1 if (ptr + inc) overflows, 0 otherwise.
  * Both arguments must be unsigned pointer values (i.e. uintptr_t).
@@ -162,5 +169,10 @@
  * Ticks elapsed in one second with a signal of 1 MHz
  */
 #define MHZ_TICKS_PER_SEC	U(1000000)
+
+/*
+ * Ticks elapsed in one second with a signal of 1 KHz
+ */
+#define KHZ_TICKS_PER_SEC U(1000)
 
 #endif /* UTILS_DEF_H */

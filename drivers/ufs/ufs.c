@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2017-2021, ARM Limited and Contributors. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -34,6 +34,9 @@ int ufshc_send_uic_cmd(uintptr_t base, uic_cmd_t *cmd)
 {
 	unsigned int data;
 
+	if (base == 0 || cmd == NULL)
+		return -EINVAL;
+
 	data = mmio_read_32(base + HCS);
 	if ((data & HCS_UCRDY) == 0)
 		return -EBUSY;
@@ -54,9 +57,13 @@ int ufshc_dme_get(unsigned int attr, unsigned int idx, unsigned int *val)
 {
 	uintptr_t base;
 	unsigned int data;
-	int retries;
+	int result, retries;
+	uic_cmd_t cmd;
 
-	assert((ufs_params.reg_base != 0) && (val != NULL));
+	assert(ufs_params.reg_base != 0);
+
+	if (val == NULL)
+		return -EINVAL;
 
 	base = ufs_params.reg_base;
 	for (retries = 0; retries < 100; retries++) {
@@ -68,19 +75,20 @@ int ufshc_dme_get(unsigned int attr, unsigned int idx, unsigned int *val)
 	if (retries >= 100)
 		return -EBUSY;
 
-	mmio_write_32(base + IS, ~0);
-	mmio_write_32(base + UCMDARG1, (attr << 16) | GEN_SELECTOR_IDX(idx));
-	mmio_write_32(base + UCMDARG2, 0);
-	mmio_write_32(base + UCMDARG3, 0);
-	mmio_write_32(base + UICCMD, DME_GET);
-	do {
+	cmd.arg1 = (attr << 16) | GEN_SELECTOR_IDX(idx);
+	cmd.arg2 = 0;
+	cmd.arg3 = 0;
+	cmd.op = DME_GET;
+	for (retries = 0; retries < UFS_UIC_COMMAND_RETRIES; ++retries) {
+		result = ufshc_send_uic_cmd(base, &cmd);
+		if (result == 0)
+			break;
 		data = mmio_read_32(base + IS);
 		if (data & UFS_INT_UE)
 			return -EINVAL;
-	} while ((data & UFS_INT_UCCS) == 0);
-	mmio_write_32(base + IS, UFS_INT_UCCS);
-	data = mmio_read_32(base + UCMDARG2) & CONFIG_RESULT_CODE_MASK;
-	assert(data == 0);
+	}
+	if (retries >= UFS_UIC_COMMAND_RETRIES)
+		return -EIO;
 
 	*val = mmio_read_32(base + UCMDARG3);
 	return 0;
@@ -90,60 +98,134 @@ int ufshc_dme_set(unsigned int attr, unsigned int idx, unsigned int val)
 {
 	uintptr_t base;
 	unsigned int data;
+	int result, retries;
+	uic_cmd_t cmd;
 
 	assert((ufs_params.reg_base != 0));
 
 	base = ufs_params.reg_base;
-	data = mmio_read_32(base + HCS);
-	if ((data & HCS_UCRDY) == 0)
-		return -EBUSY;
-	mmio_write_32(base + IS, ~0);
-	mmio_write_32(base + UCMDARG1, (attr << 16) | GEN_SELECTOR_IDX(idx));
-	mmio_write_32(base + UCMDARG2, 0);
-	mmio_write_32(base + UCMDARG3, val);
-	mmio_write_32(base + UICCMD, DME_SET);
-	do {
+	cmd.arg1 = (attr << 16) | GEN_SELECTOR_IDX(idx);
+	cmd.arg2 = 0;
+	cmd.arg3 = val;
+	cmd.op = DME_SET;
+
+	for (retries = 0; retries < UFS_UIC_COMMAND_RETRIES; ++retries) {
+		result = ufshc_send_uic_cmd(base, &cmd);
+		if (result == 0)
+			break;
 		data = mmio_read_32(base + IS);
 		if (data & UFS_INT_UE)
 			return -EINVAL;
-	} while ((data & UFS_INT_UCCS) == 0);
-	mmio_write_32(base + IS, UFS_INT_UCCS);
-	data = mmio_read_32(base + UCMDARG2) & CONFIG_RESULT_CODE_MASK;
-	assert(data == 0);
+	}
+	if (retries >= UFS_UIC_COMMAND_RETRIES)
+		return -EIO;
+
 	return 0;
 }
 
-static void ufshc_reset(uintptr_t base)
+static int ufshc_hce_enable(uintptr_t base)
 {
 	unsigned int data;
+	int retries;
 
 	/* Enable Host Controller */
 	mmio_write_32(base + HCE, HCE_ENABLE);
+
 	/* Wait until basic initialization sequence completed */
+	for (retries = 0; retries < HCE_ENABLE_INNER_RETRIES; ++retries) {
+		data = mmio_read_32(base + HCE);
+		if (data & HCE_ENABLE) {
+			break;
+		}
+		udelay(HCE_ENABLE_TIMEOUT_US);
+	}
+	if (retries >= HCE_ENABLE_INNER_RETRIES) {
+		return -ETIMEDOUT;
+	}
+
+	return 0;
+}
+
+static int ufshc_hce_disable(uintptr_t base)
+{
+	unsigned int data;
+	int timeout;
+
+	/* Disable Host Controller */
+	mmio_write_32(base + HCE, HCE_DISABLE);
+	timeout = HCE_DISABLE_TIMEOUT_US;
 	do {
 		data = mmio_read_32(base + HCE);
-	} while ((data & HCE_ENABLE) == 0);
+		if ((data & HCE_ENABLE) == HCE_DISABLE) {
+			break;
+		}
+		udelay(1);
+	} while (--timeout > 0);
+
+	if (timeout <= 0) {
+		return -ETIMEDOUT;
+	}
+
+	return 0;
+}
+
+
+static int ufshc_reset(uintptr_t base)
+{
+	unsigned int data;
+	int retries, result;
+
+	/* disable controller if enabled */
+	if (mmio_read_32(base + HCE) & HCE_ENABLE) {
+		result = ufshc_hce_disable(base);
+		if (result != 0) {
+			return -EIO;
+		}
+	}
+
+	for (retries = 0; retries < HCE_ENABLE_OUTER_RETRIES; ++retries) {
+		result = ufshc_hce_enable(base);
+		if (result == 0) {
+			break;
+		}
+	}
+	if (retries >= HCE_ENABLE_OUTER_RETRIES) {
+		return -EIO;
+	}
 
 	/* Enable Interrupts */
 	data = UFS_INT_UCCS | UFS_INT_ULSS | UFS_INT_UE | UFS_INT_UTPES |
 	       UFS_INT_DFES | UFS_INT_HCFES | UFS_INT_SBFES;
 	mmio_write_32(base + IE, data);
+
+	return 0;
+}
+
+static int ufshc_dme_link_startup(uintptr_t base)
+{
+	uic_cmd_t cmd;
+
+	memset(&cmd, 0, sizeof(cmd));
+	cmd.op = DME_LINKSTARTUP;
+	return ufshc_send_uic_cmd(base, &cmd);
 }
 
 static int ufshc_link_startup(uintptr_t base)
 {
-	uic_cmd_t cmd;
 	int data, result;
 	int retries;
 
-	for (retries = 10; retries > 0; retries--) {
-		memset(&cmd, 0, sizeof(cmd));
-		cmd.op = DME_LINKSTARTUP;
-		result = ufshc_send_uic_cmd(base, &cmd);
-		if (result != 0)
+	for (retries = DME_LINKSTARTUP_RETRIES; retries > 0; retries--) {
+		result = ufshc_dme_link_startup(base);
+		if (result != 0) {
+			/* Reset controller before trying again */
+			result = ufshc_reset(base);
+			if (result != 0) {
+				return result;
+			}
 			continue;
-		while ((mmio_read_32(base + HCS) & HCS_DP) == 0)
-			;
+		}
+		assert((mmio_read_32(base + HCS) & HCS_DP) == 0);
 		data = mmio_read_32(base + IS);
 		if (data & UFS_INT_ULSS)
 			mmio_write_32(base + IS, UFS_INT_ULSS);
@@ -182,7 +264,7 @@ static void get_utrd(utp_utrd_t *utrd)
 
 	/* clear utrd */
 	memset((void *)utrd, 0, sizeof(utp_utrd_t));
-	base = ufs_params.desc_base + (slot * UFS_DESC_SIZE);
+	base = ufs_params.desc_base + (slot * sizeof(utrd_header_t));
 	/* clear the descriptor */
 	memset((void *)base, 0, UFS_DESC_SIZE);
 
@@ -216,12 +298,6 @@ static int ufs_prepare_cmd(utp_utrd_t *utrd, uint8_t op, uint8_t lun,
 	unsigned int ulba;
 	unsigned int lba_cnt;
 	int prdt_size;
-
-
-	mmio_write_32(ufs_params.reg_base + UTRLBA,
-		      utrd->header & UINT32_MAX);
-	mmio_write_32(ufs_params.reg_base + UTRLBAU,
-		      (utrd->upiu >> 32) & UINT32_MAX);
 
 	hd = (utrd_header_t *)utrd->header;
 	upiu = (cmd_upiu_t *)utrd->upiu;
@@ -305,7 +381,6 @@ static int ufs_prepare_cmd(utp_utrd_t *utrd, uint8_t op, uint8_t lun,
 		hd->prdto = (utrd->size_upiu + utrd->size_resp_upiu) >> 2;
 	}
 
-	flush_dcache_range((uintptr_t)utrd, sizeof(utp_utrd_t));
 	flush_dcache_range((uintptr_t)utrd->header, UFS_DESC_SIZE);
 	return 0;
 }
@@ -320,12 +395,6 @@ static int ufs_prepare_query(utp_utrd_t *utrd, uint8_t op, uint8_t idn,
 
 	hd = (utrd_header_t *)utrd->header;
 	query_upiu = (query_upiu_t *)utrd->upiu;
-
-	mmio_write_32(ufs_params.reg_base + UTRLBA,
-		      utrd->header & UINT32_MAX);
-	mmio_write_32(ufs_params.reg_base + UTRLBAU,
-		      (utrd->header >> 32) & UINT32_MAX);
-
 
 	hd->i = 1;
 	hd->ct = CT_UFS_STORAGE;
@@ -358,13 +427,12 @@ static int ufs_prepare_query(utp_utrd_t *utrd, uint8_t op, uint8_t idn,
 		break;
 	case QUERY_WRITE_ATTR:
 		query_upiu->query_func = QUERY_FUNC_STD_WRITE;
-		memcpy((void *)&query_upiu->ts.attr.value, (void *)buf, length);
+		query_upiu->ts.attr.value = htobe32(*((uint32_t *)buf));
 		break;
 	default:
 		assert(0);
 		break;
 	}
-	flush_dcache_range((uintptr_t)utrd, sizeof(utp_utrd_t));
 	flush_dcache_range((uintptr_t)utrd->header, UFS_DESC_SIZE);
 	return 0;
 }
@@ -373,11 +441,6 @@ static void ufs_prepare_nop_out(utp_utrd_t *utrd)
 {
 	utrd_header_t *hd;
 	nop_out_upiu_t *nop_out;
-
-	mmio_write_32(ufs_params.reg_base + UTRLBA,
-		      utrd->header & UINT32_MAX);
-	mmio_write_32(ufs_params.reg_base + UTRLBAU,
-		      (utrd->header >> 32) & UINT32_MAX);
 
 	hd = (utrd_header_t *)utrd->header;
 	nop_out = (nop_out_upiu_t *)utrd->upiu;
@@ -388,7 +451,6 @@ static void ufs_prepare_nop_out(utp_utrd_t *utrd)
 
 	nop_out->trans_type = 0;
 	nop_out->task_tag = utrd->task_tag;
-	flush_dcache_range((uintptr_t)utrd, sizeof(utp_utrd_t));
 	flush_dcache_range((uintptr_t)utrd->header, UFS_DESC_SIZE);
 }
 
@@ -402,9 +464,7 @@ static void ufs_send_request(int task_tag)
 	mmio_write_32(ufs_params.reg_base + IS, ~0);
 
 	mmio_write_32(ufs_params.reg_base + UTRLRSR, 1);
-	do {
-		data = mmio_read_32(ufs_params.reg_base + UTRLRSR);
-	} while (data == 0);
+	assert(mmio_read_32(ufs_params.reg_base + UTRLRSR) == 1);
 
 	data = UTRIACR_IAEN | UTRIACR_CTR | UTRIACR_IACTH(0x1F) |
 	       UTRIACR_IATOVAL(0xFF);
@@ -417,13 +477,12 @@ static int ufs_check_resp(utp_utrd_t *utrd, int trans_type)
 {
 	utrd_header_t *hd;
 	resp_upiu_t *resp;
+	sense_data_t *sense;
 	unsigned int data;
 	int slot;
 
 	hd = (utrd_header_t *)utrd->header;
 	resp = (resp_upiu_t *)utrd->resp_upiu;
-	inv_dcache_range((uintptr_t)hd, UFS_DESC_SIZE);
-	inv_dcache_range((uintptr_t)utrd, sizeof(utp_utrd_t));
 	do {
 		data = mmio_read_32(ufs_params.reg_base + IS);
 		if ((data & ~(UFS_INT_UCCS | UFS_INT_UTRCS)) != 0)
@@ -433,11 +492,45 @@ static int ufs_check_resp(utp_utrd_t *utrd, int trans_type)
 
 	data = mmio_read_32(ufs_params.reg_base + UTRLDBR);
 	assert((data & (1 << slot)) == 0);
+	/*
+	 * Invalidate the header after DMA read operation has
+	 * completed to avoid cpu referring to the prefetched
+	 * data brought in before DMA completion.
+	 */
+	inv_dcache_range((uintptr_t)hd, UFS_DESC_SIZE);
 	assert(hd->ocs == OCS_SUCCESS);
 	assert((resp->trans_type & TRANS_TYPE_CODE_MASK) == trans_type);
+
+	sense = &resp->sd.sense;
+	if (sense->resp_code == SENSE_DATA_VALID &&
+	    sense->sense_key == SENSE_KEY_UNIT_ATTENTION && sense->asc == 0x29 &&
+	    sense->ascq == 0) {
+		WARN("Unit Attention Condition\n");
+		return -EAGAIN;
+	}
+
 	(void)resp;
 	(void)slot;
 	return 0;
+}
+
+static void ufs_send_cmd(utp_utrd_t *utrd, uint8_t cmd_op, uint8_t lun, int lba, uintptr_t buf,
+			 size_t length)
+{
+	int result, i;
+
+	for (i = 0; i < UFS_CMD_RETRIES; ++i) {
+		get_utrd(utrd);
+		result = ufs_prepare_cmd(utrd, cmd_op, lun, lba, buf, length);
+		assert(result == 0);
+		ufs_send_request(utrd->task_tag);
+		result = ufs_check_resp(utrd, RESPONSE_UPIU);
+		if (result == 0 || result == -EIO) {
+			break;
+		}
+	}
+	assert(result == 0);
+	(void)result;
 }
 
 #ifdef UFS_RESP_DEBUG
@@ -490,14 +583,7 @@ static void ufs_verify_init(void)
 static void ufs_verify_ready(void)
 {
 	utp_utrd_t utrd;
-	int result;
-
-	get_utrd(&utrd);
-	ufs_prepare_cmd(&utrd, CDBCMD_TEST_UNIT_READY, 0, 0, 0, 0);
-	ufs_send_request(utrd.task_tag);
-	result = ufs_check_resp(&utrd, RESPONSE_UPIU);
-	assert(result == 0);
-	(void)result;
+	ufs_send_cmd(&utrd, CDBCMD_TEST_UNIT_READY, 0, 0, 0, 0);
 }
 
 static void ufs_query(uint8_t op, uint8_t idn, uint8_t index, uint8_t sel,
@@ -534,11 +620,13 @@ static void ufs_query(uint8_t op, uint8_t idn, uint8_t index, uint8_t sel,
 	case QUERY_READ_FLAG:
 		*(uint32_t *)buf = (uint32_t)resp->ts.flag.value;
 		break;
-	case QUERY_READ_ATTR:
 	case QUERY_READ_DESC:
 		memcpy((void *)buf,
 		       (void *)(utrd.resp_upiu + sizeof(query_resp_upiu_t)),
 		       size);
+		break;
+	case QUERY_READ_ATTR:
+		*(uint32_t *)buf = htobe32(resp->ts.attr.value);
 		break;
 	default:
 		/* Do nothing in default case */
@@ -591,15 +679,14 @@ void ufs_write_desc(int idn, int index, uintptr_t buf, size_t size)
 	ufs_query(QUERY_WRITE_DESC, idn, index, 0, buf, size);
 }
 
-static void ufs_read_capacity(int lun, unsigned int *num, unsigned int *size)
+static int ufs_read_capacity(int lun, unsigned int *num, unsigned int *size)
 {
 	utp_utrd_t utrd;
 	resp_upiu_t *resp;
 	sense_data_t *sense;
 	unsigned char data[CACHE_WRITEBACK_GRANULE << 1];
 	uintptr_t buf;
-	int result;
-	int retry;
+	int retries = UFS_READ_CAPACITY_RETRIES;
 
 	assert((ufs_params.reg_base != 0) &&
 	       (ufs_params.desc_base != 0) &&
@@ -610,59 +697,52 @@ static void ufs_read_capacity(int lun, unsigned int *num, unsigned int *size)
 	buf = (uintptr_t)data;
 	buf = (buf + CACHE_WRITEBACK_GRANULE - 1) &
 	      ~(CACHE_WRITEBACK_GRANULE - 1);
-	memset((void *)buf, 0, CACHE_WRITEBACK_GRANULE);
-	flush_dcache_range(buf, CACHE_WRITEBACK_GRANULE);
 	do {
-		get_utrd(&utrd);
-		ufs_prepare_cmd(&utrd, CDBCMD_READ_CAPACITY_10, lun, 0,
-				buf, READ_CAPACITY_LENGTH);
-		ufs_send_request(utrd.task_tag);
-		result = ufs_check_resp(&utrd, RESPONSE_UPIU);
-		assert(result == 0);
+		ufs_send_cmd(&utrd, CDBCMD_READ_CAPACITY_10, lun, 0,
+			    buf, READ_CAPACITY_LENGTH);
 #ifdef UFS_RESP_DEBUG
 		dump_upiu(&utrd);
 #endif
 		resp = (resp_upiu_t *)utrd.resp_upiu;
-		retry = 0;
 		sense = &resp->sd.sense;
-		if (sense->resp_code == SENSE_DATA_VALID) {
-			if ((sense->sense_key == SENSE_KEY_UNIT_ATTENTION) &&
-			    (sense->asc == 0x29) && (sense->ascq == 0)) {
-				retry = 1;
-			}
+		if (!((sense->resp_code == SENSE_DATA_VALID) &&
+		    (sense->sense_key == SENSE_KEY_UNIT_ATTENTION) &&
+		    (sense->asc == 0x29) && (sense->ascq == 0))) {
+			inv_dcache_range(buf, CACHE_WRITEBACK_GRANULE);
+			/* last logical block address */
+			*num = be32toh(*(unsigned int *)buf);
+			if (*num)
+				*num += 1;
+			/* logical block length in bytes */
+			*size = be32toh(*(unsigned int *)(buf + 4));
+
+			return 0;
 		}
-		inv_dcache_range(buf, CACHE_WRITEBACK_GRANULE);
-		/* last logical block address */
-		*num = be32toh(*(unsigned int *)buf);
-		if (*num)
-			*num += 1;
-		/* logical block length in bytes */
-		*size = be32toh(*(unsigned int *)(buf + 4));
-	} while (retry);
-	(void)result;
+
+	} while (retries-- > 0);
+
+	return -ETIMEDOUT;
 }
 
 size_t ufs_read_blocks(int lun, int lba, uintptr_t buf, size_t size)
 {
 	utp_utrd_t utrd;
 	resp_upiu_t *resp;
-	int result;
 
 	assert((ufs_params.reg_base != 0) &&
 	       (ufs_params.desc_base != 0) &&
 	       (ufs_params.desc_size >= UFS_DESC_SIZE));
 
-	memset((void *)buf, 0, size);
-	get_utrd(&utrd);
-	ufs_prepare_cmd(&utrd, CDBCMD_READ_10, lun, lba, buf, size);
-	ufs_send_request(utrd.task_tag);
-	result = ufs_check_resp(&utrd, RESPONSE_UPIU);
-	assert(result == 0);
+	ufs_send_cmd(&utrd, CDBCMD_READ_10, lun, lba, buf, size);
 #ifdef UFS_RESP_DEBUG
 	dump_upiu(&utrd);
 #endif
+	/*
+	 * Invalidate prefetched cache contents before cpu
+	 * accesses the buf.
+	 */
+	inv_dcache_range(buf, size);
 	resp = (resp_upiu_t *)utrd.resp_upiu;
-	(void)result;
 	return size - resp->res_trans_cnt;
 }
 
@@ -670,49 +750,75 @@ size_t ufs_write_blocks(int lun, int lba, const uintptr_t buf, size_t size)
 {
 	utp_utrd_t utrd;
 	resp_upiu_t *resp;
-	int result;
 
 	assert((ufs_params.reg_base != 0) &&
 	       (ufs_params.desc_base != 0) &&
 	       (ufs_params.desc_size >= UFS_DESC_SIZE));
 
-	memset((void *)buf, 0, size);
-	get_utrd(&utrd);
-	ufs_prepare_cmd(&utrd, CDBCMD_WRITE_10, lun, lba, buf, size);
-	ufs_send_request(utrd.task_tag);
-	result = ufs_check_resp(&utrd, RESPONSE_UPIU);
-	assert(result == 0);
+	ufs_send_cmd(&utrd, CDBCMD_WRITE_10, lun, lba, buf, size);
 #ifdef UFS_RESP_DEBUG
 	dump_upiu(&utrd);
 #endif
 	resp = (resp_upiu_t *)utrd.resp_upiu;
-	(void)result;
 	return size - resp->res_trans_cnt;
+}
+
+static int ufs_set_fdevice_init(void)
+{
+	unsigned int result;
+	int timeout;
+
+	ufs_set_flag(FLAG_DEVICE_INIT);
+
+	timeout = FDEVICEINIT_TIMEOUT_MS;
+	do {
+		result = ufs_read_flag(FLAG_DEVICE_INIT);
+		if (!result) {
+			break;
+		}
+		mdelay(5);
+		timeout -= 5;
+	} while (timeout > 0);
+
+	if (result != 0U) {
+		return -ETIMEDOUT;
+	}
+
+	return 0;
 }
 
 static void ufs_enum(void)
 {
 	unsigned int blk_num, blk_size;
-	int i;
+	int i, result;
 
-	/* 0 means 1 slot */
-	nutrs = (mmio_read_32(ufs_params.reg_base + CAP) & CAP_NUTRS_MASK) + 1;
-	if (nutrs > (ufs_params.desc_size / UFS_DESC_SIZE))
-		nutrs = ufs_params.desc_size / UFS_DESC_SIZE;
+	mmio_write_32(ufs_params.reg_base + UTRLBA,
+		      ufs_params.desc_base & UINT32_MAX);
+	mmio_write_32(ufs_params.reg_base + UTRLBAU,
+		      (ufs_params.desc_base >> 32) & UINT32_MAX);
 
 	ufs_verify_init();
 	ufs_verify_ready();
 
-	ufs_set_flag(FLAG_DEVICE_INIT);
-	mdelay(200);
+	result = ufs_set_fdevice_init();
+	assert(result == 0);
+
+	blk_num = 0;
+	blk_size = 0;
+
 	/* dump available LUNs */
 	for (i = 0; i < UFS_MAX_LUNS; i++) {
-		ufs_read_capacity(i, &blk_num, &blk_size);
+		result = ufs_read_capacity(i, &blk_num, &blk_size);
+		if (result != 0) {
+			WARN("UFS LUN%d dump failed\n", i);
+		}
 		if (blk_num && blk_size) {
 			INFO("UFS LUN%d contains %d blocks with %d-byte size\n",
 			     i, blk_num, blk_size);
 		}
 	}
+
+	(void)result;
 }
 
 static void ufs_get_device_info(struct ufs_dev_desc *card_data)
@@ -744,7 +850,19 @@ int ufs_init(const ufs_ops_t *ops, ufs_params_t *params)
 
 	memcpy(&ufs_params, params, sizeof(ufs_params_t));
 
+	/* 0 means 1 slot */
+	nutrs = (mmio_read_32(ufs_params.reg_base + CAP) & CAP_NUTRS_MASK) + 1;
+	if (nutrs > (ufs_params.desc_size / UFS_DESC_SIZE)) {
+		nutrs = ufs_params.desc_size / UFS_DESC_SIZE;
+	}
+
+
 	if (ufs_params.flags & UFS_FLAGS_SKIPINIT) {
+		mmio_write_32(ufs_params.reg_base + UTRLBA,
+			      ufs_params.desc_base & UINT32_MAX);
+		mmio_write_32(ufs_params.reg_base + UTRLBAU,
+			      (ufs_params.desc_base >> 32) & UINT32_MAX);
+
 		result = ufshc_dme_get(0x1571, 0, &data);
 		assert(result == 0);
 		result = ufshc_dme_get(0x41, 0, &data);
@@ -772,7 +890,8 @@ int ufs_init(const ufs_ops_t *ops, ufs_params_t *params)
 		assert((ops != NULL) && (ops->phy_init != NULL) &&
 		       (ops->phy_set_pwr_mode != NULL));
 
-		ufshc_reset(ufs_params.reg_base);
+		result = ufshc_reset(ufs_params.reg_base);
+		assert(result == 0);
 		ops->phy_init(&ufs_params);
 		result = ufshc_link_startup(ufs_params.reg_base);
 		assert(result == 0);

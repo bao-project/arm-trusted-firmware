@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2017-2020, ARM Limited and Contributors. All rights reserved.
+# Copyright (c) 2017-2022, ARM Limited and Contributors. All rights reserved.
 #
 # SPDX-License-Identifier: BSD-3-Clause
 #
@@ -11,9 +11,8 @@ COLD_BOOT_SINGLE_CPU	:=	1
 # We can choose where a core starts executing
 PROGRAMMABLE_RESET_ADDRESS:=	1
 
-# System coherency is managed in hardware
+# ARM coherency is managed in hardware
 WARMBOOT_ENABLE_DCACHE_EARLY :=	1
-USE_COHERENT_MEM	:=	1
 
 # A53 erratum for SoC. (enable them all)
 ERRATA_A53_826319	:=	1
@@ -21,12 +20,14 @@ ERRATA_A53_835769	:=	1
 ERRATA_A53_836870	:=	1
 ERRATA_A53_843419	:=	1
 ERRATA_A53_855873	:=	1
+ERRATA_A53_1530924	:=	1
 
 # A72 Erratum for SoC
 ERRATA_A72_859971	:=	1
+ERRATA_A72_1319367	:=	1
 
 CRASH_REPORTING		:= 1
-HANDLE_EA_EL3_FIRST	:= 1
+HANDLE_EA_EL3_FIRST_NS	:= 1
 
 # Split out RO data into a non-executable section
 SEPARATE_CODE_AND_RODATA :=    1
@@ -43,6 +44,10 @@ $(eval $(call add_define,K3_USART))
 # Allow customizing the UART baud rate
 K3_USART_BAUD		:=	115200
 $(eval $(call add_define,K3_USART_BAUD))
+
+# Enable system suspend modes
+K3_PM_SYSTEM_SUSPEND	:=	0
+$(eval $(call add_define,K3_PM_SYSTEM_SUSPEND))
 
 # Libraries
 include lib/xlat_tables_v2/xlat_tables.mk

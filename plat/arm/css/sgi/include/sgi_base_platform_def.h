@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2020, Arm Limited and Contributors. All rights reserved.
+ * Copyright (c) 2018-2022, Arm Limited and Contributors. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -9,12 +9,9 @@
 
 #include <lib/utils_def.h>
 #include <lib/xlat_tables/xlat_tables_defs.h>
-#include <plat/arm/board/common/board_css_def.h>
-#include <plat/arm/board/common/v2m_def.h>
 #include <plat/arm/common/arm_def.h>
 #include <plat/arm/common/arm_spm_def.h>
 #include <plat/arm/css/common/css_def.h>
-#include <plat/arm/soc/common/soc_css_def.h>
 #include <plat/common/common_def.h>
 
 #define PLATFORM_CORE_COUNT		(CSS_SGI_CHIP_COUNT *		\
@@ -22,21 +19,25 @@
 					CSS_SGI_MAX_CPUS_PER_CLUSTER *	\
 					CSS_SGI_MAX_PE_PER_CPU)
 
-#define PLAT_ARM_TRUSTED_SRAM_SIZE	0x00040000	/* 256 KB */
+#define PLAT_ARM_TRUSTED_SRAM_SIZE	0x00080000	/* 512 KB */
 
-/* Remote chip address offset (4TB per chip) */
-#define CSS_SGI_REMOTE_CHIP_MEM_OFFSET(n)	((ULL(1) << 42) * (n))
+/* Remote chip address offset */
+#define CSS_SGI_REMOTE_CHIP_MEM_OFFSET(n)	\
+		((ULL(1) << CSS_SGI_ADDR_BITS_PER_CHIP) * (n))
 
 /*
  * PLAT_ARM_MMAP_ENTRIES depends on the number of entries in the
- * plat_arm_mmap array defined for each BL stage.
+ * plat_arm_mmap array defined for each BL stage. In addition to that, on
+ * multi-chip platforms, address regions on each of the remote chips are
+ * also mapped. In BL31, for instance, three address regions on the remote
+ * chips are accessed - secure ram, css device and soc device regions.
  */
 #if defined(IMAGE_BL31)
 # if SPM_MM
-#  define PLAT_ARM_MMAP_ENTRIES		9
-#  define MAX_XLAT_TABLES		7
-#  define PLAT_SP_IMAGE_MMAP_REGIONS	7
-#  define PLAT_SP_IMAGE_MAX_XLAT_TABLES	10
+#  define PLAT_ARM_MMAP_ENTRIES		(9  + ((CSS_SGI_CHIP_COUNT - 1) * 3))
+#  define MAX_XLAT_TABLES		(7  + ((CSS_SGI_CHIP_COUNT - 1) * 3))
+#  define PLAT_SP_IMAGE_MMAP_REGIONS	10
+#  define PLAT_SP_IMAGE_MAX_XLAT_TABLES	12
 # else
 #  define PLAT_ARM_MMAP_ENTRIES		(5 + ((CSS_SGI_CHIP_COUNT - 1) * 3))
 #  define MAX_XLAT_TABLES		(6 + ((CSS_SGI_CHIP_COUNT - 1) * 3))
@@ -44,6 +45,17 @@
 #elif defined(IMAGE_BL32)
 # define PLAT_ARM_MMAP_ENTRIES		8
 # define MAX_XLAT_TABLES		5
+#elif defined(IMAGE_BL2)
+# define PLAT_ARM_MMAP_ENTRIES		(11 + (CSS_SGI_CHIP_COUNT - 1))
+
+/*
+ * MAX_XLAT_TABLES entries need to be doubled because when the address width
+ * exceeds 40 bits an additional level of translation is required. In case of
+ * multichip platforms peripherals also fall into address space with width
+ * > 40 bits
+ *
+ */
+# define MAX_XLAT_TABLES		(7  + ((CSS_SGI_CHIP_COUNT - 1) * 2))
 #elif !USE_ROMLIB
 # define PLAT_ARM_MMAP_ENTRIES		11
 # define MAX_XLAT_TABLES		7
@@ -56,7 +68,7 @@
  * PLAT_ARM_MAX_BL1_RW_SIZE is calculated using the current BL1 RW debug size
  * plus a little space for growth.
  */
-#define PLAT_ARM_MAX_BL1_RW_SIZE	0xC000
+#define PLAT_ARM_MAX_BL1_RW_SIZE	(64 * 1024)	/* 64 KB */
 
 /*
  * PLAT_ARM_MAX_ROMLIB_RW_SIZE is define to use a full page
@@ -72,20 +84,31 @@
 
 /*
  * PLAT_ARM_MAX_BL2_SIZE is calculated using the current BL2 debug size plus a
- * little space for growth.
+ * little space for growth. Additional 8KiB space is added per chip in
+ * order to accommodate the additional level of translation required for "TZC"
+ * peripheral access which lies in >4TB address space.
+ *
  */
 #if TRUSTED_BOARD_BOOT
-# define PLAT_ARM_MAX_BL2_SIZE		0x1D000
+# define PLAT_ARM_MAX_BL2_SIZE		(0x20000 + ((CSS_SGI_CHIP_COUNT - 1) * \
+							0x2000))
 #else
-# define PLAT_ARM_MAX_BL2_SIZE		0x14000
+# define PLAT_ARM_MAX_BL2_SIZE		(0x14000 + ((CSS_SGI_CHIP_COUNT - 1) * \
+							0x2000))
 #endif
 
 /*
  * Since BL31 NOBITS overlays BL2 and BL1-RW, PLAT_ARM_MAX_BL31_SIZE is
- * calculated using the current BL31 PROGBITS debug size plus the sizes of
- * BL2 and BL1-RW
+ * calculated using the current BL31 PROGBITS debug size plus the sizes of BL2
+ * and BL1-RW. CSS_SGI_BL31_SIZE - is tuned with respect to the actual BL31
+ * PROGBITS size which is around 64-68KB at the time this change is being made.
+ * A buffer of ~35KB is added to account for future expansion of the image,
+ * making it a total of 100KB.
  */
-#define PLAT_ARM_MAX_BL31_SIZE		0x3B000
+#define CSS_SGI_BL31_SIZE		(100 * 1024)	/* 100 KB */
+#define PLAT_ARM_MAX_BL31_SIZE		(CSS_SGI_BL31_SIZE +		\
+						PLAT_ARM_MAX_BL2_SIZE +	\
+						PLAT_ARM_MAX_BL1_RW_SIZE)
 
 /*
  * Size of cacheable stacks
@@ -114,6 +137,21 @@
 # define PLATFORM_STACK_SIZE 0x440
 #endif
 
+/* PL011 UART related constants */
+#define SOC_CSS_SEC_UART_BASE			UL(0x2A410000)
+#define SOC_CSS_NSEC_UART_BASE			UL(0x2A400000)
+#define SOC_CSS_UART_SIZE			UL(0x10000)
+#define SOC_CSS_UART_CLK_IN_HZ			UL(7372800)
+
+/* UART related constants */
+#define PLAT_ARM_BOOT_UART_BASE			SOC_CSS_SEC_UART_BASE
+#define PLAT_ARM_BOOT_UART_CLK_IN_HZ		SOC_CSS_UART_CLK_IN_HZ
+
+#define PLAT_ARM_RUN_UART_BASE			SOC_CSS_SEC_UART_BASE
+#define PLAT_ARM_RUN_UART_CLK_IN_HZ		SOC_CSS_UART_CLK_IN_HZ
+
+#define PLAT_ARM_CRASH_UART_BASE		SOC_CSS_SEC_UART_BASE
+#define PLAT_ARM_CRASH_UART_CLK_IN_HZ		SOC_CSS_UART_CLK_IN_HZ
 
 #define PLAT_ARM_NSTIMER_FRAME_ID	0
 
@@ -168,48 +206,36 @@
 
 #define PLAT_SP_PRI				PLAT_RAS_PRI
 
-#if RAS_EXTENSION
-/* Allocate 128KB for CPER buffers */
-#define PLAT_SP_BUF_BASE			ULL(0x20000)
-
-#define PLAT_ARM_SP_IMAGE_STACK_BASE		(PLAT_SP_IMAGE_NS_BUF_BASE + \
-						PLAT_SP_IMAGE_NS_BUF_SIZE + \
-						PLAT_SP_BUF_BASE)
-
-/* Platform specific SMC FID's used for RAS */
-#define SP_DMC_ERROR_INJECT_EVENT_AARCH64	0xC4000042
-#define SP_DMC_ERROR_INJECT_EVENT_AARCH32	0x84000042
-
-#define SP_DMC_ERROR_OVERFLOW_EVENT_AARCH64	0xC4000043
-#define SP_DMC_ERROR_OVERFLOW_EVENT_AARCH32	0x84000043
-
-#define SP_DMC_ERROR_ECC_EVENT_AARCH64		0xC4000044
-#define SP_DMC_ERROR_ECC_EVENT_AARCH32		0x84000044
-
-/* ARM SDEI dynamic shared event numbers */
-#define SGI_SDEI_DS_EVENT_0			804
-#define SGI_SDEI_DS_EVENT_1			805
-
-#define PLAT_ARM_PRIVATE_SDEI_EVENTS	\
-	SDEI_DEFINE_EVENT_0(ARM_SDEI_SGI), \
-	SDEI_EXPLICIT_EVENT(SGI_SDEI_DS_EVENT_0, SDEI_MAPF_CRITICAL), \
-	SDEI_EXPLICIT_EVENT(SGI_SDEI_DS_EVENT_1, SDEI_MAPF_CRITICAL),
-#define PLAT_ARM_SHARED_SDEI_EVENTS
-
-#define ARM_SP_CPER_BUF_BASE			(PLAT_SP_IMAGE_NS_BUF_BASE + \
-						PLAT_SP_IMAGE_NS_BUF_SIZE)
-#define ARM_SP_CPER_BUF_SIZE			ULL(0x20000)
-#define ARM_SP_CPER_BUF_MMAP			MAP_REGION2(		\
-						ARM_SP_CPER_BUF_BASE,	\
-						ARM_SP_CPER_BUF_BASE,	\
-						ARM_SP_CPER_BUF_SIZE,	\
-						MT_RW_DATA | MT_NS | MT_USER, \
+#if SPM_MM && RAS_EXTENSION
+/*
+ * CPER buffer memory of 128KB is reserved and it is placed adjacent to the
+ * memory shared between EL3 and S-EL0.
+ */
+#define CSS_SGI_SP_CPER_BUF_BASE	(PLAT_SP_IMAGE_NS_BUF_BASE + \
+					 PLAT_SP_IMAGE_NS_BUF_SIZE)
+#define CSS_SGI_SP_CPER_BUF_SIZE	ULL(0x20000)
+#define CSS_SGI_SP_CPER_BUF_MMAP	MAP_REGION2(			       \
+						CSS_SGI_SP_CPER_BUF_BASE,      \
+						CSS_SGI_SP_CPER_BUF_BASE,      \
+						CSS_SGI_SP_CPER_BUF_SIZE,      \
+						MT_RW_DATA | MT_NS | MT_USER,  \
 						PAGE_SIZE)
 
-#else
+/*
+ * Secure partition stack follows right after the memory space reserved for
+ * CPER buffer memory.
+ */
+#define PLAT_ARM_SP_IMAGE_STACK_BASE		(PLAT_SP_IMAGE_NS_BUF_BASE +   \
+						 PLAT_SP_IMAGE_NS_BUF_SIZE +   \
+						 CSS_SGI_SP_CPER_BUF_SIZE)
+#elif SPM_MM
+/*
+ * Secure partition stack follows right after the memory region that is shared
+ * between EL3 and S-EL0.
+ */
 #define PLAT_ARM_SP_IMAGE_STACK_BASE	(PLAT_SP_IMAGE_NS_BUF_BASE +	\
 					 PLAT_SP_IMAGE_NS_BUF_SIZE)
-#endif /* RAS_EXTENSION */
+#endif /* SPM_MM && RAS_EXTENSION */
 
 /* Platform ID address */
 #define SSC_VERSION                     (SSC_REG_BASE + SSC_VERSION_OFFSET)
@@ -240,5 +266,35 @@
 
 /* Number of SCMI channels on the platform */
 #define PLAT_ARM_SCMI_CHANNEL_COUNT	CSS_SGI_CHIP_COUNT
+
+/*
+ * Mapping definition of the TrustZone Controller for ARM SGI/RD platforms
+ * where both the DRAM regions are marked for non-secure access. This applies
+ * to multi-chip platforms.
+ */
+#define SGI_PLAT_TZC_NS_REMOTE_REGIONS_DEF(n)				\
+	{CSS_SGI_REMOTE_CHIP_MEM_OFFSET(n) + ARM_DRAM1_BASE,		\
+		CSS_SGI_REMOTE_CHIP_MEM_OFFSET(n) + ARM_DRAM1_END,	\
+		ARM_TZC_NS_DRAM_S_ACCESS, PLAT_ARM_TZC_NS_DEV_ACCESS},	\
+	{CSS_SGI_REMOTE_CHIP_MEM_OFFSET(n) + ARM_DRAM2_BASE,		\
+		CSS_SGI_REMOTE_CHIP_MEM_OFFSET(n) + ARM_DRAM2_END,	\
+		ARM_TZC_NS_DRAM_S_ACCESS, PLAT_ARM_TZC_NS_DEV_ACCESS}
+
+#if SPM_MM
+
+/*
+ * Stand-alone MM logs would be routed via secure UART. Define page table
+ * entry for secure UART which would be common to all platforms.
+ */
+#define SOC_PLATFORM_SECURE_UART	MAP_REGION_FLAT(		\
+					SOC_CSS_SEC_UART_BASE,		\
+					SOC_CSS_UART_SIZE,		\
+					MT_DEVICE | MT_RW | 		\
+					MT_SECURE | MT_USER)
+
+#endif
+
+/* SDS ID for unusable CPU MPID list structure */
+#define SDS_ISOLATED_CPU_LIST_ID		U(128)
 
 #endif /* SGI_BASE_PLATFORM_DEF_H */

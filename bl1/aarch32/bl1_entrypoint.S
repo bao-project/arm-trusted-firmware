@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2019, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2016-2022, ARM Limited and Contributors. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -23,8 +23,8 @@ vector_base bl1_vector_table
 	b	bl1_entrypoint
 	b	report_exception	/* Undef */
 	b	bl1_aarch32_smc_handler	/* SMC call */
-	b	report_exception	/* Prefetch abort */
-	b	report_exception	/* Data abort */
+	b	report_prefetch_abort	/* Prefetch abort */
+	b	report_data_abort	/* Data abort */
 	b	report_exception	/* Reserved */
 	b	report_exception	/* IRQ */
 	b	report_exception	/* FIQ */
@@ -49,7 +49,8 @@ func bl1_entrypoint
 		_secondary_cold_boot=!COLD_BOOT_SINGLE_CPU	\
 		_init_memory=1					\
 		_init_c_runtime=1				\
-		_exception_vectors=bl1_vector_table
+		_exception_vectors=bl1_vector_table		\
+		_pie_fixup_size=0
 
 	/* -----------------------------------------------------
 	 * Perform BL1 setup

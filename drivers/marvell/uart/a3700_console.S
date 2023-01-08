@@ -34,7 +34,7 @@
 	 *     w1 - Uart clock in Hz
 	 *     w2 - Baud rate
 	 * Out: return 1 on success
-	 * Clobber list : x1, x2, x3
+	 * Clobber list : x1, x2, x3, x4
 	 * -----------------------------------------------
 	 */
 func console_a3700_core_init
@@ -44,57 +44,63 @@ func console_a3700_core_init
 	cbz	w1, init_fail
 	cbz	w2, init_fail
 
-	/* Program the baudrate */
-	/* Divisor =  Uart clock / (16 * baudrate) */
-	lsl	w2, w2, #4
-	udiv	w2, w1, w2
-	and	w2, w2, #0x3ff
-
-	ldr	w3, [x0, #UART_BAUD_REG]
-	bic	w3, w3, 0x3ff
-	orr	w3, w3, w2
-	str	w3, [x0, #UART_BAUD_REG]/* set baud rate divisor */
-
-	/* Set UART to default 16X scheme */
-	mov	w3, #0
-	str	w3, [x0, #UART_POSSR_REG]
-
 	/*
-	 * Wait for the TX FIFO to be empty. If wait for 20ms, the TX FIFO is
+	 * Wait for the TX (THR and TSR) to be empty. If wait for 3ms, the TX FIFO is
 	 * still not empty, TX FIFO will reset by all means.
 	 */
-	mov	w1, #20				/* max time out 20ms */
+	mov	w4, #30				/* max time out 30 * 100 us */
 2:
-	/* Check whether TX FIFO is empty */
+	/* Check whether TX (THR and TSR) is empty */
 	ldr	w3, [x0, #UART_STATUS_REG]
-	and	w3, w3, #UARTLSR_TXFIFOEMPTY
+	and	w3, w3, #UARTLSR_TXEMPTY
 	cmp	w3, #0
 	b.ne	4f
 
 	/* Delay */
-	mov	w2, #30000
+	mov	w3, #60000	/* 60000 cycles of below 3 instructions on 1200 MHz CPU ~~ 100 us */
 3:
-	sub     w2, w2, #1
-	cmp	w2, #0
+	sub	w3, w3, #1
+	cmp	w3, #0
 	b.ne	3b
 
-	/* Check whether 10ms is waited */
-	sub     w1, w1, #1
-	cmp	w1, #0
+	/* Check whether wait timeout expired */
+	sub	w4, w4, #1
+	cmp	w4, #0
 	b.ne	2b
 
 4:
+	/* Reset UART via North Bridge Peripheral */
+	mov_imm	x4, MVEBU_NB_RESET_REG
+	ldr	w3, [x4]
+	bic	w3, w3, #MVEBU_NB_RESET_UART_N
+	str	w3, [x4]
+	orr	w3, w3, #MVEBU_NB_RESET_UART_N
+	str	w3, [x4]
+
 	/* Reset FIFO */
 	mov	w3, #UART_CTRL_RXFIFO_RESET
 	orr	w3, w3, #UART_CTRL_TXFIFO_RESET
 	str	w3, [x0, #UART_CTRL_REG]
 
 	/* Delay */
-	mov	w2, #2000
+	mov	w3, #2000
 1:
-	sub     w2, w2, #1
-	cmp	w2, #0
+	sub	w3, w3, #1
+	cmp	w3, #0
 	b.ne	1b
+
+	/* Program the baudrate */
+	/* Divisor = Round(Uartclock / (16 * baudrate)) */
+	lsl	w2, w2, #4
+	add	w1, w1, w2, lsr #1
+	udiv	w2, w1, w2
+	and	w2, w2, #0x3ff /* clear all other bits to use default clock */
+
+	str	w2, [x0, #UART_BAUD_REG]/* set baud rate divisor */
+
+	/* Set UART to default 16X scheme */
+	mov	w3, #0
+	str	w3, [x0, #UART_POSSR_REG]
 
 	/* No Parity, 1 Stop */
 	mov	w3, #0
@@ -120,7 +126,7 @@ endfunc console_a3700_core_init
 	 *     w2 - Baud rate
 	 *     x3 - pointer to empty console_t struct
 	 * Out: return 1 on success, 0 on error
-	 * Clobber list : x0, x1, x2, x6, x7, x14
+	 * Clobber list : x0, x1, x2, x3, x4, x6, x7, x14
 	 * -----------------------------------------------
 	 */
 func console_a3700_register
@@ -196,14 +202,23 @@ endfunc console_a3700_putc
 	 * int console_a3700_core_getc(void)
 	 * Function to get a character from the console.
 	 * It returns the character grabbed on success
-	 * or -1 on error.
+	 * or -1 if no character is available.
 	 * In : w0 - console base address
-	 * Out : return -1 on error else return character.
+	 * Out : w0 - character if available, else -1
 	 * Clobber list : x0, x1
 	 * ---------------------------------------------
 	 */
 func console_a3700_core_getc
-	mov	w0, #-1
+	/* Check if there is a pending character */
+	ldr	w1, [x0, #UART_STATUS_REG]
+	and	w1, w1, #UARTLSR_RXRDY
+	cmp	w1, #UARTLSR_RXRDY
+	b.ne	getc_no_char
+	ldr	w0, [x0, #UART_RX_REG]
+	and	w0, w0, #0xff
+	ret
+getc_no_char:
+	mov	w0, #ERROR_NO_PENDING_CHAR
 	ret
 endfunc console_a3700_core_getc
 
@@ -232,6 +247,11 @@ endfunc console_a3700_getc
 	 * ---------------------------------------------
 	 */
 func console_a3700_core_flush
+	/* Wait for the TX (THR and TSR) to be empty */
+1:	ldr	w1, [x0, #UART_STATUS_REG]
+	and	w1, w1, #UARTLSR_TXEMPTY
+	cmp	w1, #UARTLSR_TXEMPTY
+	b.ne	1b
 	ret
 endfunc console_a3700_core_flush
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2020, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2018-2022, Arm Limited and Contributors. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -13,7 +13,10 @@
 #include <drivers/arm/css/css_mhu_doorbell.h>
 #include <drivers/arm/css/scmi.h>
 #include <plat/arm/common/plat_arm.h>
+
 #include <plat/common/platform.h>
+
+#include <plat/arm/css/common/css_pm.h>
 
 #include <sgi_ras.h>
 #include <sgi_variant.h>
@@ -28,7 +31,7 @@ static scmi_channel_plat_info_t sgi575_scmi_plat_info = {
 		.ring_doorbell = &mhu_ring_doorbell,
 };
 
-static scmi_channel_plat_info_t rd_n1e1_edge_scmi_plat_info[] = {
+static scmi_channel_plat_info_t plat_rd_scmi_info[] = {
 	{
 		.scmi_mbx_mem = CSS_SCMI_PAYLOAD_BASE,
 		.db_reg_addr = PLAT_CSS_MHU_BASE + SENDER_REG_SET(0),
@@ -74,10 +77,13 @@ static scmi_channel_plat_info_t rd_n1e1_edge_scmi_plat_info[] = {
 scmi_channel_plat_info_t *plat_css_get_scmi_info(int channel_id)
 {
 	if (sgi_plat_info.platform_id == RD_N1E1_EDGE_SID_VER_PART_NUM ||
-		sgi_plat_info.platform_id == RD_DANIEL_SID_VER_PART_NUM) {
-		if (channel_id >= ARRAY_SIZE(rd_n1e1_edge_scmi_plat_info))
+		sgi_plat_info.platform_id == RD_V1_SID_VER_PART_NUM ||
+		sgi_plat_info.platform_id == RD_N2_SID_VER_PART_NUM ||
+		sgi_plat_info.platform_id == RD_V2_SID_VER_PART_NUM ||
+		sgi_plat_info.platform_id == RD_N2_CFG1_SID_VER_PART_NUM) {
+		if (channel_id >= ARRAY_SIZE(plat_rd_scmi_info))
 			panic();
-		return &rd_n1e1_edge_scmi_plat_info[channel_id];
+		return &plat_rd_scmi_info[channel_id];
 	}
 	else if (sgi_plat_info.platform_id == SGI575_SSC_VER_PART_NUM)
 		return &sgi575_scmi_plat_info;
@@ -102,17 +108,25 @@ void sgi_bl31_common_platform_setup(void)
 #if RAS_EXTENSION
 	sgi_ras_intr_handler_setup();
 #endif
+
+	/* Configure the warm reboot SGI for primary core */
+	css_setup_cpu_pwr_down_intr();
+
+#if CSS_SYSTEM_GRACEFUL_RESET
+	/* Register priority level handlers for reboot */
+	ehf_register_priority_handler(PLAT_REBOOT_PRI,
+			css_reboot_interrupt_handler);
+#endif
 }
 
 const plat_psci_ops_t *plat_arm_psci_override_pm_ops(plat_psci_ops_t *ops)
 {
 	/*
-	 * For RD-E1-Edge and RD-Daniel platforms, only CPU power ON/OFF
-	 * PSCI platform callbacks are supported.
+	 * For RD-E1-Edge, only CPU power ON/OFF, PSCI platform callbacks are
+	 * supported.
 	 */
 	if (((sgi_plat_info.platform_id == RD_N1E1_EDGE_SID_VER_PART_NUM) &&
-	    (sgi_plat_info.config_id == RD_E1_EDGE_CONFIG_ID)) ||
-	    (sgi_plat_info.platform_id == RD_DANIEL_SID_VER_PART_NUM)) {
+	    (sgi_plat_info.config_id == RD_E1_EDGE_CONFIG_ID))) {
 		ops->cpu_standby = NULL;
 		ops->system_off = NULL;
 		ops->system_reset = NULL;

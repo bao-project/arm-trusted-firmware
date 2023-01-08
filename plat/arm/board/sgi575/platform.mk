@@ -4,6 +4,8 @@
 # SPDX-License-Identifier: BSD-3-Clause
 #
 
+$(warning Platform ${PLAT} is deprecated. Some of the features might not work as expected)
+
 include plat/arm/css/sgi/sgi-common.mk
 
 SGI575_BASE		=	plat/arm/board/sgi575
@@ -11,6 +13,8 @@ SGI575_BASE		=	plat/arm/board/sgi575
 PLAT_INCLUDES		+=	-I${SGI575_BASE}/include/
 
 SGI_CPU_SOURCES		:=	lib/cpus/aarch64/cortex_a75.S
+
+PLAT_BL_COMMON_SOURCES	+=	${CSS_ENT_BASE}/sgi_plat.c
 
 BL1_SOURCES		+=	${SGI_CPU_SOURCES}			\
 				${SGI575_BASE}/sgi575_err.c
@@ -55,4 +59,9 @@ $(eval $(call TOOL_ADD_PAYLOAD,${NT_FW_CONFIG},--nt-fw-config,${NT_FW_CONFIG}))
 ifneq ($(CSS_SGI_CHIP_COUNT),1)
  $(error  "Chip count for SGI575 should be 1, currently set to \
    ${CSS_SGI_CHIP_COUNT}.")
+endif
+
+ifneq ($(CSS_SGI_PLATFORM_VARIANT),0)
+ $(error "CSS_SGI_PLATFORM_VARIANT for SGI575 should always be 0,\
+     currently set to ${CSS_SGI_PLATFORM_VARIANT}.")
 endif

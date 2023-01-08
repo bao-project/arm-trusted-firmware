@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2018 Marvell International Ltd.
+ * Copyright (C) 2018-2020 Marvell International Ltd.
  *
  * SPDX-License-Identifier:	BSD-3-Clause
  * https://spdx.org/licenses
@@ -590,6 +590,13 @@ static wake_up_src_func a3700_get_wake_up_src_func(
 	return NULL;
 }
 
+#pragma weak mv_wake_up_src_config_get
+struct pm_wake_up_src_config *mv_wake_up_src_config_get(void)
+{
+	static struct pm_wake_up_src_config wake_up_src_cfg = {};
+	return &wake_up_src_cfg;
+}
+
 static void a3700_set_wake_up_source(void)
 {
 	struct pm_wake_up_src_config *wake_up_src;
@@ -763,6 +770,11 @@ static void __dead2 a3700_system_off(void)
 	panic();
 }
 
+#pragma weak cm3_system_reset
+void cm3_system_reset(void)
+{
+}
+
 /*****************************************************************************
  * A3700 handlers to reset the system
  *****************************************************************************
@@ -779,6 +791,9 @@ static void __dead2 a3700_system_reset(void)
 	flush_dcache_range((uintptr_t)PLAT_MARVELL_MAILBOX_BASE,
 			   2 * sizeof(uint64_t));
 #endif
+
+	/* Use Cortex-M3 secure coprocessor for system reset */
+	cm3_system_reset();
 
 	/* Trigger the warm reset */
 	mmio_write_32(MVEBU_WARM_RESET_REG, MVEBU_WARM_RESET_MAGIC);

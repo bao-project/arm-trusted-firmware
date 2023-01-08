@@ -1,6 +1,6 @@
 
 /*
- * Copyright (c) 2015-2020, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2015-2022, ARM Limited and Contributors. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -11,6 +11,7 @@
 #include <common/bl_common.h>
 #include <lib/xlat_tables/xlat_tables_v2.h>
 
+#include <plat/common/platform.h>
 #include "qemu_private.h"
 
 #define MAP_DEVICE0	MAP_REGION_FLAT(DEVICE0_BASE,			\
@@ -26,7 +27,7 @@
 #ifdef DEVICE2_BASE
 #define MAP_DEVICE2	MAP_REGION_FLAT(DEVICE2_BASE,			\
 					DEVICE2_SIZE,			\
-					MT_DEVICE | MT_RO | MT_SECURE)
+					MT_DEVICE | MT_RW | MT_SECURE)
 #endif
 
 #define MAP_SHARED_RAM	MAP_REGION_FLAT(SHARED_RAM_BASE,		\
@@ -93,7 +94,11 @@ static const mmap_region_t plat_qemu_mmap[] = {
 #ifdef MAP_DEVICE1
 	MAP_DEVICE1,
 #endif
+#ifdef MAP_DEVICE2
+	MAP_DEVICE2,
+#endif
 #if SPM_MM
+	MAP_NS_DRAM0,
 	QEMU_SPM_BUF_EL3_MMAP,
 #else
 	MAP_BL32_MEM,
@@ -107,6 +112,9 @@ static const mmap_region_t plat_qemu_mmap[] = {
 	MAP_DEVICE0,
 #ifdef MAP_DEVICE1
 	MAP_DEVICE1,
+#endif
+#ifdef MAP_DEVICE2
+	MAP_DEVICE2,
 #endif
 	{0}
 };
@@ -153,4 +161,9 @@ DEFINE_CONFIGURE_MMU_EL(el3)
 DEFINE_CONFIGURE_MMU_EL(svc_mon)
 #endif
 
-
+#if MEASURED_BOOT || TRUSTED_BOARD_BOOT
+int plat_get_mbedtls_heap(void **heap_addr, size_t *heap_size)
+{
+	return get_mbedtls_heap_helper(heap_addr, heap_size);
+}
+#endif

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2019, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2015-2022, ARM Limited and Contributors. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -25,18 +25,9 @@
 #define PLATFORM_STACK_SIZE		0xC00
 #endif
 
-#ifdef AARCH32_SP_OPTEE
-#define OPTEE_HEADER_IMAGE_NAME		"teeh"
-#define OPTEE_PAGED_IMAGE_NAME		"teed"
-#define OPTEE_PAGER_IMAGE_NAME		"teex"
-#define OPTEE_HEADER_BINARY_TYPE	U(0x20)
-#define OPTEE_PAGER_BINARY_TYPE		U(0x21)
-#define OPTEE_PAGED_BINARY_TYPE		U(0x22)
-#endif
-
-/* SSBL = second stage boot loader */
-#define BL33_IMAGE_NAME			"ssbl"
-#define BL33_BINARY_TYPE		U(0x0)
+#define FIP_IMAGE_NAME			"fip"
+#define METADATA_PART_1			"metadata1"
+#define METADATA_PART_2			"metadata2"
 
 #define STM32MP_PRIMARY_CPU		U(0x0)
 #define STM32MP_SECONDARY_CPU		U(0x1)
@@ -64,14 +55,26 @@
 #define BL2_LIMIT			(STM32MP_BL2_BASE + \
 					 STM32MP_BL2_SIZE)
 
+#define BL2_RO_BASE			STM32MP_BL2_RO_BASE
+#define BL2_RO_LIMIT			(STM32MP_BL2_RO_BASE + \
+					 STM32MP_BL2_RO_SIZE)
+
+#define BL2_RW_BASE			STM32MP_BL2_RW_BASE
+#define BL2_RW_LIMIT			(STM32MP_BL2_RW_BASE + \
+					 STM32MP_BL2_RW_SIZE)
 /*******************************************************************************
  * BL32 specific defines.
  ******************************************************************************/
-#ifndef AARCH32_SP_OPTEE
+#if defined(IMAGE_BL32)
+#if ENABLE_PIE
+#define BL32_BASE			0
+#define BL32_LIMIT			STM32MP_BL32_SIZE
+#else
 #define BL32_BASE			STM32MP_BL32_BASE
 #define BL32_LIMIT			(STM32MP_BL32_BASE + \
 					 STM32MP_BL32_SIZE)
 #endif
+#endif /* defined(IMAGE_BL32) */
 
 /*******************************************************************************
  * BL33 specific defines.
@@ -82,6 +85,15 @@
  * Load address of BL33 for this platform port
  */
 #define PLAT_STM32MP_NS_IMAGE_OFFSET	BL33_BASE
+
+/* Needed by STM32CubeProgrammer support */
+#define DWL_BUFFER_SIZE			U(0x01000000)
+
+/*
+ * SSBL offset in case it's stored in eMMC boot partition.
+ * We can fix it to 256K because TF-A size can't be bigger than SRAM
+ */
+#define PLAT_EMMC_BOOT_SSBL_OFFSET		U(0x40000)
 
 /*******************************************************************************
  * DTB specific defines.

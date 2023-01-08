@@ -1,11 +1,12 @@
 /*
- * Copyright (c) 2017-2020, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2017-2021, Arm Limited and Contributors. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
 #include <assert.h>
 #include <errno.h>
+#include <inttypes.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -95,7 +96,23 @@ static void xlat_desc_print(const xlat_ctx_t *ctx, uint64_t desc)
 			  ? "-USER" : "-PRIV");
 	}
 
+#if ENABLE_RME
+	switch (desc & LOWER_ATTRS(EL3_S1_NSE | NS)) {
+	case 0ULL:
+		printf("-S");
+		break;
+	case LOWER_ATTRS(NS):
+		printf("-NS");
+		break;
+	case LOWER_ATTRS(EL3_S1_NSE):
+		printf("-RT");
+		break;
+	default: /* LOWER_ATTRS(EL3_S1_NSE | NS) */
+		printf("-RL");
+	}
+#else
 	printf(((LOWER_ATTRS(NS) & desc) != 0ULL) ? "-NS" : "-S");
+#endif
 
 #ifdef __aarch64__
 	/* Check Guarded Page bit */
@@ -183,7 +200,7 @@ static void xlat_tables_print_internal(xlat_ctx_t *ctx, uintptr_t table_base_va,
 					(uint64_t *)addr_inner,
 					XLAT_TABLE_ENTRIES, level + 1U);
 			} else {
-				printf("%sVA:0x%lx PA:0x%llx size:0x%zx ",
+				printf("%sVA:0x%lx PA:0x%" PRIx64 " size:0x%zx ",
 				       level_spacers[level], table_idx_va,
 				       (uint64_t)(desc & TABLE_ADDR_MASK),
 				       level_size);

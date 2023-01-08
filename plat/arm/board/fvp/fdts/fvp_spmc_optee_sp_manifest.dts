@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, Arm Limited. All rights reserved.
+ * Copyright (c) 2020-2021, Arm Limited. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -20,16 +20,11 @@
 	attribute {
 		spmc_id = <0x8000>;
 		maj_ver = <0x1>;
-		min_ver = <0x0>;
+		min_ver = <0x1>;
 		exec_state = <0x0>;
 		load_address = <0x0 0x6000000>;
 		entrypoint = <0x0 0x6000000>;
 		binary_size = <0x80000>;
-	};
-
-	chosen {
-		linux,initrd-start = <0>;
-		linux,initrd-end = <0>;
 	};
 
 	hypervisor {
@@ -38,7 +33,8 @@
 			is_ffa_partition;
 			debug_name = "op-tee";
 			load_address = <0x6280000>;
-			smc_whitelist = <0xbe000000>;
+			vcpu_count = <8>;
+			mem_size = <1048576>;
 		};
 	};
 
@@ -59,11 +55,6 @@
 		CPU_3
 		CPU_2
 		CPU_1
-	};
-
-	device-memory@0 {
-		device_type = "device-memory";
-		reg = <0x0 0x0 0x6000000 0x0 0x8000000 0x78000000>;
 	};
 
 	memory@6000000 {

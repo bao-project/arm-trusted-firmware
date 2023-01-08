@@ -168,7 +168,7 @@ func do_panic
 	mrs	x0, currentel
 	ubfx	x0, x0, #MODE_EL_SHIFT, #MODE_EL_WIDTH
 	cmp	x0, #MODE_EL3
-#if !HANDLE_EA_EL3_FIRST
+#if !HANDLE_EA_EL3_FIRST_NS
 	ldr	x0, [sp], #0x10
 	b.eq	el3_panic
 #else
@@ -184,7 +184,7 @@ func do_panic
 
 to_panic_common:
 	ldr	x0, [sp], #0x10
-#endif /* HANDLE_EA_EL3_FIRST */
+#endif /* HANDLE_EA_EL3_FIRST_NS */
 #endif /* CRASH_REPORTING */
 
 panic_common:
@@ -207,6 +207,9 @@ el3_panic:
 	/* The panic location is lr -4 */
 	sub	x4, x4, #4
 	bl	asm_print_hex
+
+	/* Print new line */
+	bl	asm_print_newline
 
 	bl	plat_crash_console_flush
 

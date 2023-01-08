@@ -7,13 +7,14 @@
 #ifndef FCONF_ARM_SP_GETTER_H
 #define FCONF_ARM_SP_GETTER_H
 
+#include <common/tbbr/tbbr_img_def.h>
 #include <lib/fconf/fconf.h>
 #include <tools_share/uuid.h>
 
 /* arm_sp getter */
 #define arm__sp_getter(prop)	arm_sp.prop
 
-#define ARM_SP_MAX_SIZE		U(0x80000)
+#define ARM_SP_MAX_SIZE		U(0xb0000)
 #define ARM_SP_OWNER_NAME_LEN	U(8)
 
 struct arm_sp_t {

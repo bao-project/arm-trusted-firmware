@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2019, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2015-2022, ARM Limited and Contributors. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -24,6 +24,14 @@
 #define PLATFORM_CLUSTER1_CORE_COUNT	U(0)
 #else
 #define PLATFORM_MAX_CPUS_PER_CLUSTER	U(4)
+/*
+ * Define the number of cores per cluster used in calculating core position.
+ * The cluster number is shifted by this value and added to the core ID,
+ * so its value represents log2(cores/cluster).
+ * Default is 2**(2) = 4 cores per cluster.
+ */
+#define PLATFORM_CPU_PER_CLUSTER_SHIFT	U(2)
+
 #define PLATFORM_CLUSTER_COUNT		U(2)
 #define PLATFORM_CLUSTER0_CORE_COUNT	PLATFORM_MAX_CPUS_PER_CLUSTER
 #define PLATFORM_CLUSTER1_CORE_COUNT	PLATFORM_MAX_CPUS_PER_CLUSTER
@@ -72,14 +80,19 @@
 #define SEC_ROM_BASE			0x00000000
 #define SEC_ROM_SIZE			0x00020000
 
-#define NS_DRAM0_BASE			0x40000000
-#define NS_DRAM0_SIZE			0x3de00000
+#define NS_DRAM0_BASE			ULL(0x40000000)
+#define NS_DRAM0_SIZE			ULL(0xc0000000)
 
 #define SEC_SRAM_BASE			0x0e000000
-#define SEC_SRAM_SIZE			0x00060000
+#define SEC_SRAM_SIZE			0x00100000
 
 #define SEC_DRAM_BASE			0x0e100000
 #define SEC_DRAM_SIZE			0x00f00000
+
+#define SECURE_GPIO_BASE		0x090b0000
+#define SECURE_GPIO_SIZE		0x00001000
+#define SECURE_GPIO_POWEROFF		0
+#define SECURE_GPIO_RESET		1
 
 /* Load pageable part of OP-TEE 2MB above secure DRAM base */
 #define QEMU_OPTEE_PAGEABLE_LOAD_BASE	(SEC_DRAM_BASE + 0x00200000)
@@ -133,7 +146,7 @@
  * Put BL3-1 at the top of the Trusted SRAM. BL31_BASE is calculated using the
  * current BL3-1 debug size plus a little space for growth.
  */
-#define BL31_BASE			(BL31_LIMIT - 0x20000)
+#define BL31_BASE			(BL31_LIMIT - 0x60000)
 #define BL31_LIMIT			(BL_RAM_BASE + BL_RAM_SIZE)
 #define BL31_PROGBITS_LIMIT		BL1_RW_BASE
 
@@ -202,7 +215,7 @@
 #define DEVICE0_BASE			0x08000000
 #define DEVICE0_SIZE			0x01000000
 #define DEVICE1_BASE			0x09000000
-#define DEVICE1_SIZE			0x00041000
+#define DEVICE1_SIZE			0x00c00000
 
 /*
  * GIC related constants
@@ -256,5 +269,10 @@
  * System counter
  */
 #define SYS_COUNTER_FREQ_IN_TICKS	((1000 * 1000 * 1000) / 16)
+
+/*
+ * Maximum size of Event Log buffer used in Measured Boot Event Log driver
+ */
+#define	PLAT_EVENT_LOG_MAX_SIZE		UL(0x400)
 
 #endif /* PLATFORM_DEF_H */

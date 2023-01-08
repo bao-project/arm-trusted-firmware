@@ -16,13 +16,17 @@
 
 #define PLATFORM_STACK_SIZE		0x1000
 
-#define PLATFORM_MAX_CPUS_PER_CLUSTER	U(4)
-#define PLATFORM_CLUSTER_COUNT		U(2)
-#define PLATFORM_CLUSTER0_CORE_COUNT	PLATFORM_MAX_CPUS_PER_CLUSTER
-#define PLATFORM_CLUSTER1_CORE_COUNT	PLATFORM_MAX_CPUS_PER_CLUSTER
-#define PLATFORM_CORE_COUNT		(PLATFORM_CLUSTER0_CORE_COUNT + \
-					 PLATFORM_CLUSTER1_CORE_COUNT)
-
+#define PLATFORM_MAX_CPUS_PER_CLUSTER	U(8)
+/*
+ * Define the number of cores per cluster used in calculating core position.
+ * The cluster number is shifted by this value and added to the core ID,
+ * so its value represents log2(cores/cluster).
+ * Default is 2**(3) = 8 cores per cluster.
+ */
+#define PLATFORM_CPU_PER_CLUSTER_SHIFT	U(3)
+#define PLATFORM_CLUSTER_COUNT		U(64)
+#define PLATFORM_CORE_COUNT		(PLATFORM_CLUSTER_COUNT * \
+					PLATFORM_MAX_CPUS_PER_CLUSTER)
 #define QEMU_PRIMARY_CPU		U(0)
 
 #define PLAT_NUM_PWR_DOMAINS		(PLATFORM_CLUSTER_COUNT + \
@@ -85,7 +89,7 @@
  */
 
 #define SHARED_RAM_BASE			SEC_SRAM_BASE
-#define SHARED_RAM_SIZE			0x00001000
+#define SHARED_RAM_SIZE			0x00002000
 
 #define PLAT_QEMU_TRUSTED_MAILBOX_BASE	SHARED_RAM_BASE
 #define PLAT_QEMU_TRUSTED_MAILBOX_SIZE	(8 + PLAT_QEMU_HOLD_SIZE)
@@ -130,7 +134,7 @@
  * Put BL3-1 at the top of the Trusted SRAM. BL31_BASE is calculated using the
  * current BL3-1 debug size plus a little space for growth.
  */
-#define BL31_SIZE			0x50000
+#define BL31_SIZE			0x300000
 #define BL31_BASE			(BL31_LIMIT - BL31_SIZE)
 #define BL31_LIMIT			(BL1_RW_BASE)
 #define BL31_PROGBITS_LIMIT		BL1_RW_BASE
@@ -157,17 +161,17 @@
 #define PLAT_VIRT_ADDR_SPACE_SIZE	(1ull << 42)
 #if SPM_MM
 #define MAX_MMAP_REGIONS		12
-#define MAX_XLAT_TABLES			11
+#define MAX_XLAT_TABLES			12
 #else
 #define MAX_MMAP_REGIONS		11
-#define MAX_XLAT_TABLES			10
+#define MAX_XLAT_TABLES			11
 #endif
 #define MAX_IO_DEVICES			3
 #define MAX_IO_HANDLES			4
 
 #if SPM_MM && defined(IMAGE_BL31)
 # define PLAT_SP_IMAGE_MMAP_REGIONS	30
-# define PLAT_SP_IMAGE_MAX_XLAT_TABLES	20
+# define PLAT_SP_IMAGE_MAX_XLAT_TABLES	50
 #endif
 
 /*
@@ -203,7 +207,10 @@
 #define DEVICE0_SIZE			0x04080000
 /* This is map from NORMAL_UART up to SECURE_UART_MM */
 #define DEVICE1_BASE			0x60000000
-#define DEVICE1_SIZE			0x00041000
+#define DEVICE1_SIZE			0x10041000
+/* This is a map for SECURE_EC */
+#define DEVICE2_BASE			0x50000000
+#define DEVICE2_SIZE			0x00001000
 
 /*
  * GIC related constants
@@ -300,10 +307,13 @@
 /*
  * Shared memory between Normal world and S-EL0 for
  * passing data during service requests. It will be marked as RW and NS.
+ * This buffer is allocated at the top of NS_DRAM, the base address is
+ * overridden in SPM initialization.
  */
 #define PLAT_QEMU_SP_IMAGE_NS_BUF_BASE	(PLAT_QEMU_DT_BASE +		\
 						PLAT_QEMU_DT_MAX_SIZE)
-#define PLAT_QEMU_SP_IMAGE_NS_BUF_SIZE	ULL(0x10000)
+#define PLAT_QEMU_SP_IMAGE_NS_BUF_SIZE	ULL(0x200000)
+
 #define QEMU_SP_IMAGE_NS_BUF_MMAP	MAP_REGION2( \
 					PLAT_QEMU_SP_IMAGE_NS_BUF_BASE, \
 					PLAT_QEMU_SP_IMAGE_NS_BUF_BASE, \
@@ -333,6 +343,19 @@
 					MT_RW_DATA | MT_SECURE | \
 					MT_USER, \
 					PAGE_SIZE)
+
+/*
+ * Secure variable storage is located at Secure Flash.
+ */
+#if SPM_MM
+#define QEMU_SECURE_VARSTORE_BASE 0x01000000
+#define QEMU_SECURE_VARSTORE_SIZE 0x00100000
+#define MAP_SECURE_VARSTORE		MAP_REGION_FLAT( \
+					QEMU_SECURE_VARSTORE_BASE, \
+					QEMU_SECURE_VARSTORE_SIZE, \
+					MT_DEVICE | MT_RW | \
+					MT_SECURE | MT_USER)
+#endif
 
 /* Total number of memory regions with distinct properties */
 #define PLAT_QEMU_SP_IMAGE_NUM_MEM_REGIONS	6

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2020, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2013-2022, ARM Limited and Contributors. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -45,8 +45,9 @@
 	 * instruction. When an error is thus synchronized, the handling is
 	 * delegated to platform EA handler.
 	 *
-	 * Without RAS_EXTENSION, this macro just saves x30, and unmasks
-	 * Asynchronous External Aborts.
+	 * Without RAS_EXTENSION, this macro synchronizes pending errors using
+         * a DSB, unmasks Asynchronous External Aborts and saves X30 before
+	 * setting the flag CTX_IS_IN_EL3.
 	 */
 	.macro check_and_unmask_ea
 #if RAS_EXTENSION
@@ -70,8 +71,9 @@
 	 * Save general purpose and ARMv8.3-PAuth registers (if enabled).
 	 * If Secure Cycle Counter is not disabled in MDCR_EL3 when
 	 * ARMv8.5-PMU is implemented, save PMCR_EL0 and disable Cycle Counter.
+	 * Also set the PSTATE to a known state.
 	 */
-	bl	save_gp_pmcr_pauth_regs
+	bl	prepare_el3_entry
 
 	bl	handle_lower_el_ea_esb
 
@@ -79,12 +81,88 @@
 	bl	restore_gp_pmcr_pauth_regs
 1:
 #else
+	/*
+	 * For SoCs which do not implement RAS, use DSB as a barrier to
+	 * synchronize pending external aborts.
+	 */
+	dsb	sy
+
 	/* Unmask the SError interrupt */
 	msr	daifclr, #DAIF_ABT_BIT
 
+	/* Use ISB for the above unmask operation to take effect immediately */
+	isb
+
+	/*
+	 * Refer Note 1. No need to restore X30 as both handle_sync_exception
+	 * and handle_interrupt_exception macro which follow this macro modify
+	 * X30 anyway.
+	 */
 	str	x30, [sp, #CTX_GPREGS_OFFSET + CTX_GPREG_LR]
+	mov 	x30, #1
+	str	x30, [sp, #CTX_EL3STATE_OFFSET + CTX_IS_IN_EL3]
+	dmb	sy
 #endif
 	.endm
+
+#if !RAS_EXTENSION
+	/*
+	 * Note 1: The explicit DSB at the entry of various exception vectors
+	 * for handling exceptions from lower ELs can inadvertently trigger an
+	 * SError exception in EL3 due to pending asynchronous aborts in lower
+	 * ELs. This will end up being handled by serror_sp_elx which will
+	 * ultimately panic and die.
+	 * The way to workaround is to update a flag to indicate if the exception
+	 * truly came from EL3. This flag is allocated in the cpu_context
+	 * structure and located at offset "CTX_EL3STATE_OFFSET + CTX_IS_IN_EL3"
+	 * This is not a bullet proof solution to the problem at hand because
+	 * we assume the instructions following "isb" that help to update the
+	 * flag execute without causing further exceptions.
+	 */
+
+	/* ---------------------------------------------------------------------
+	 * This macro handles Asynchronous External Aborts.
+	 * ---------------------------------------------------------------------
+	 */
+	.macro	handle_async_ea
+	/*
+	 * Use a barrier to synchronize pending external aborts.
+	 */
+	dsb	sy
+
+	/* Unmask the SError interrupt */
+	msr	daifclr, #DAIF_ABT_BIT
+
+	/* Use ISB for the above unmask operation to take effect immediately */
+	isb
+
+	/* Refer Note 1 */
+	str	x30, [sp, #CTX_GPREGS_OFFSET + CTX_GPREG_LR]
+	mov 	x30, #1
+	str	x30, [sp, #CTX_EL3STATE_OFFSET + CTX_IS_IN_EL3]
+	dmb	sy
+
+	b	handle_lower_el_async_ea
+	.endm
+
+	/*
+	 * This macro checks if the exception was taken due to SError in EL3 or
+	 * because of pending asynchronous external aborts from lower EL that got
+	 * triggered due to explicit synchronization in EL3. Refer Note 1.
+	 */
+	.macro check_if_serror_from_EL3
+	/* Assumes SP_EL3 on entry */
+	str	x30, [sp, #CTX_GPREGS_OFFSET + CTX_GPREG_LR]
+	ldr	x30, [sp, #CTX_EL3STATE_OFFSET + CTX_IS_IN_EL3]
+	cbnz	x30, exp_from_EL3
+
+	/* Handle asynchronous external abort from lower EL */
+	b	handle_lower_el_async_ea
+
+exp_from_EL3:
+	/* Jump to plat_handle_el3_ea which does not return */
+	.endm
+#endif
 
 	/* ---------------------------------------------------------------------
 	 * This macro handles Synchronous exceptions.
@@ -132,8 +210,9 @@
 	 * Save general purpose and ARMv8.3-PAuth registers (if enabled).
 	 * If Secure Cycle Counter is not disabled in MDCR_EL3 when
 	 * ARMv8.5-PMU is implemented, save PMCR_EL0 and disable Cycle Counter.
+	 * Also set the PSTATE to a known state.
 	 */
-	bl	save_gp_pmcr_pauth_regs
+	bl	prepare_el3_entry
 
 #if ENABLE_PAUTH
 	/* Load and program APIAKey firmware key */
@@ -272,6 +351,9 @@ vector_entry fiq_sp_elx
 end_vector_entry fiq_sp_elx
 
 vector_entry serror_sp_elx
+#if !RAS_EXTENSION
+	check_if_serror_from_EL3
+#endif
 	no_ret	plat_handle_el3_ea
 end_vector_entry serror_sp_elx
 
@@ -305,8 +387,12 @@ end_vector_entry fiq_aarch64
 
 vector_entry serror_aarch64
 	apply_at_speculative_wa
+#if RAS_EXTENSION
 	msr	daifclr, #DAIF_ABT_BIT
 	b	enter_lower_el_async_ea
+#else
+	handle_async_ea
+#endif
 end_vector_entry serror_aarch64
 
 	/* ---------------------------------------------------------------------
@@ -339,8 +425,12 @@ end_vector_entry fiq_aarch32
 
 vector_entry serror_aarch32
 	apply_at_speculative_wa
+#if RAS_EXTENSION
 	msr	daifclr, #DAIF_ABT_BIT
 	b	enter_lower_el_async_ea
+#else
+	handle_async_ea
+#endif
 end_vector_entry serror_aarch32
 
 #ifdef MONITOR_TRAPS
@@ -374,8 +464,9 @@ smc_handler64:
 	 * Save general purpose and ARMv8.3-PAuth registers (if enabled).
 	 * If Secure Cycle Counter is not disabled in MDCR_EL3 when
 	 * ARMv8.5-PMU is implemented, save PMCR_EL0 and disable Cycle Counter.
+	 * Also set the PSTATE to a known state.
 	 */
-	bl	save_gp_pmcr_pauth_regs
+	bl	prepare_el3_entry
 
 #if ENABLE_PAUTH
 	/* Load and program APIAKey firmware key */
@@ -412,8 +503,33 @@ smc_handler64:
 	stp	x16, x17, [x6, #CTX_EL3STATE_OFFSET + CTX_SPSR_EL3]
 	str	x18, [x6, #CTX_EL3STATE_OFFSET + CTX_SCR_EL3]
 
+	/* Clear flag register */
+	mov	x7, xzr
+
+#if ENABLE_RME
+	/* Copy SCR_EL3.NSE bit to the flag to indicate caller's security */
+	ubfx	x7, x18, #SCR_NSE_SHIFT, 1
+
+	/*
+	 * Shift copied SCR_EL3.NSE bit by 5 to create space for
+	 * SCR_EL3.NS bit. Bit 5 of the flag corresponds to
+	 * the SCR_EL3.NSE bit.
+	 */
+	lsl	x7, x7, #5
+#endif /* ENABLE_RME */
+
 	/* Copy SCR_EL3.NS bit to the flag to indicate caller's security */
 	bfi	x7, x18, #0, #1
+
+	/*
+	 * Per SMCCCv1.3 a caller can set the SVE hint bit in the SMC FID
+	 * passed through x0. Copy the SVE hint bit to flags and mask the
+	 * bit in smc_fid passed to the standard service dispatcher.
+	 * A service/dispatcher can retrieve the SVE hint bit state from
+	 * flags using the appropriate helper.
+	 */
+	bfi	x7, x0, #FUNCID_SVE_HINT_SHIFT, #FUNCID_SVE_HINT_MASK
+	bic	x0, x0, #(FUNCID_SVE_HINT_MASK << FUNCID_SVE_HINT_SHIFT)
 
 	mov	sp, x12
 

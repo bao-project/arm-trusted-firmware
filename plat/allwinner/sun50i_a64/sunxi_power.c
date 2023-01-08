@@ -14,6 +14,7 @@
 #include <drivers/allwinner/sunxi_rsb.h>
 #include <lib/mmio.h>
 
+#include <core_off_arisc.h>
 #include <sunxi_def.h>
 #include <sunxi_mmap.h>
 #include <sunxi_private.h>
@@ -92,21 +93,13 @@ static int rsb_init(void)
 	if (ret)
 		return ret;
 
-	/* Start with 400 KHz to issue the I2C->RSB switch command. */
-	ret = rsb_set_bus_speed(SUNXI_OSC24M_CLK_IN_HZ, 400000);
-	if (ret)
-		return ret;
-
-	/*
-	 * Initiate an I2C transaction to write 0x7c into register 0x3e,
-	 * switching the PMIC to RSB mode.
-	 */
-	ret = rsb_set_device_mode(0x7c3e00);
-	if (ret)
-		return ret;
-
-	/* Now in RSB mode, switch to the recommended 3 MHz. */
+	/* Switch to the recommended 3 MHz bus clock. */
 	ret = rsb_set_bus_speed(SUNXI_OSC24M_CLK_IN_HZ, 3000000);
+	if (ret)
+		return ret;
+
+	/* Initiate an I2C transaction to switch the PMIC to RSB mode. */
+	ret = rsb_set_device_mode(AXP20X_MODE_RSB << 16 | AXP20X_MODE_REG << 8);
 	if (ret)
 		return ret;
 
@@ -155,6 +148,11 @@ int sunxi_pmic_setup(uint16_t socid, const void *fdt)
 
 		pmic = AXP803_RSB;
 		axp_setup_regulators(fdt);
+
+		/* Switch the PMIC back to I2C mode. */
+		ret = axp_write(AXP20X_MODE_REG, AXP20X_MODE_I2C);
+		if (ret)
+			return ret;
 
 		break;
 	default:
@@ -207,4 +205,55 @@ void sunxi_power_down(void)
 		break;
 	}
 
+}
+
+/* This lock synchronises access to the arisc management processor. */
+static DEFINE_BAKERY_LOCK(arisc_lock);
+
+/*
+ * If we are supposed to turn ourself off, tell the arisc SCP to do that
+ * work for us. Without any SCPI provider running there, we place some
+ * OpenRISC code into SRAM, put the address of that into the reset vector
+ * and release the arisc reset line. The SCP will wait for the core to enter
+ * WFI, then execute that code and pull the line up again.
+ * The code expects the core mask to be patched into the first instruction.
+ */
+void sunxi_cpu_power_off_self(void)
+{
+	u_register_t mpidr = read_mpidr();
+	unsigned int core  = MPIDR_AFFLVL0_VAL(mpidr);
+	uintptr_t arisc_reset_vec = SUNXI_SRAM_A2_BASE + 0x100;
+	uint32_t *code = arisc_core_off;
+
+	do {
+		bakery_lock_get(&arisc_lock);
+		/* Wait until the arisc is in reset state. */
+		if (!(mmio_read_32(SUNXI_R_CPUCFG_BASE) & BIT(0)))
+			break;
+
+		bakery_lock_release(&arisc_lock);
+	} while (1);
+
+	/* Patch up the code to feed in an input parameter. */
+	code[0] = (code[0] & ~0xffff) | BIT_32(core);
+	clean_dcache_range((uintptr_t)code, sizeof(arisc_core_off));
+
+	/*
+	 * The OpenRISC unconditional branch has opcode 0, the branch offset
+	 * is in the lower 26 bits, containing the distance to the target,
+	 * in instruction granularity (32 bits).
+	 */
+	mmio_write_32(arisc_reset_vec, ((uintptr_t)code - arisc_reset_vec) / 4);
+
+	/* De-assert the arisc reset line to let it run. */
+	mmio_setbits_32(SUNXI_R_CPUCFG_BASE, BIT(0));
+
+	/*
+	 * We release the lock here, although the arisc is still busy.
+	 * But as long as it runs, the reset line is high, so other users
+	 * won't leave the loop above.
+	 * Once it has finished, the code is supposed to clear the reset line,
+	 * to signal this to other users.
+	 */
+	bakery_lock_release(&arisc_lock);
 }

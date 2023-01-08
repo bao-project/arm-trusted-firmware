@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2020, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2013-2021, Arm Limited and Contributors. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -25,21 +25,25 @@ SECTIONS
 #if SEPARATE_CODE_AND_RODATA
     .text . : {
         __TEXT_START__ = .;
+#if ENABLE_RME
+        *bl2_rme_entrypoint.o(.text*)
+#else /* ENABLE_RME */
         *bl2_entrypoint.o(.text*)
+#endif /* ENABLE_RME */
         *(SORT_BY_ALIGNMENT(.text*))
         *(.vectors)
         . = ALIGN(PAGE_SIZE);
         __TEXT_END__ = .;
-     } >RAM
+    } >RAM
 
-     /* .ARM.extab and .ARM.exidx are only added because Clang need them */
-     .ARM.extab . : {
+    /* .ARM.extab and .ARM.exidx are only added because Clang need them */
+    .ARM.extab . : {
         *(.ARM.extab* .gnu.linkonce.armextab.*)
-     } >RAM
+    } >RAM
 
-     .ARM.exidx . : {
+    .ARM.exidx . : {
         *(.ARM.exidx* .gnu.linkonce.armexidx.*)
-     } >RAM
+    } >RAM
 
     .rodata . : {
         __RODATA_START__ = .;

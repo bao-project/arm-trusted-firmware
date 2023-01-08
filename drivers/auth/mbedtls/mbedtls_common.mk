@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2015-2020, Arm Limited. All rights reserved.
+# Copyright (c) 2015-2022, Arm Limited. All rights reserved.
 #
 # SPDX-License-Identifier: BSD-3-Clause
 #
@@ -16,7 +16,7 @@ endif
 MBEDTLS_INC		=	-I${MBEDTLS_DIR}/include
 
 # Specify mbed TLS configuration file
-MBEDTLS_CONFIG_FILE	:=	"<drivers/auth/mbedtls/mbedtls_config.h>"
+MBEDTLS_CONFIG_FILE	?=	"<drivers/auth/mbedtls/mbedtls_config.h>"
 $(eval $(call add_define,MBEDTLS_CONFIG_FILE))
 
 MBEDTLS_SOURCES	+=		drivers/auth/mbedtls/mbedtls_common.c
@@ -48,6 +48,7 @@ LIBMBEDTLS_SRCS		:= $(addprefix ${MBEDTLS_DIR}/library/,	\
 					rsa_internal.c				\
 					x509.c 					\
 					x509_crt.c 				\
+					constant_time.c 			\
 					)
 
 # The platform may define the variable 'TF_MBEDTLS_KEY_ALG' to select the key

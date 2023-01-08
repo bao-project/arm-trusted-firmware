@@ -15,6 +15,10 @@ tools/renesas/rcar_layout_create/*.bin
 tools/renesas/rcar_layout_create/*.srec
 tools/renesas/rcar_layout_create/*.map
 tools/renesas/rcar_layout_create/*.elf
+tools/renesas/rzg_layout_create/*.bin
+tools/renesas/rzg_layout_create/*.srec
+tools/renesas/rzg_layout_create/*.map
+tools/renesas/rzg_layout_create/*.elf
 tools/fiptool/fiptool
 tools/fiptool/fiptool.exe
 tools/cert_create/src/*.o
@@ -26,8 +30,7 @@ tools/amlogic/doimage
 tools/stm32image/*.o
 tools/stm32image/stm32image
 tools/stm32image/stm32image.exe
-tools/sptool/sptool
-tools/sptool/sptool.exe
+tools/sptool/__pycache__/
 
 # GNU GLOBAL files
 GPATH
@@ -38,3 +41,11 @@ GTAGS
 # Ctags
 tags
 
+# Node.js
+node_modules/
+
+# common python virtual environment directories
+.env/
+env/
+.venv/
+venv/

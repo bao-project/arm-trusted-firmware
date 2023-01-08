@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2020, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2015-2022, Arm Limited and Contributors. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -24,6 +24,9 @@
 #define SERIAL_RAND_BITS	64
 #define RSA_SALT_LEN		32
 
+cert_t *certs;
+unsigned int num_certs;
+
 int rand_serial(BIGNUM *b, ASN1_INTEGER *ai)
 {
 	BIGNUM *btmp;
@@ -36,7 +39,11 @@ int rand_serial(BIGNUM *b, ASN1_INTEGER *ai)
 	if (!btmp)
 		return 0;
 
+#if USING_OPENSSL3
+	if (!BN_rand(btmp, SERIAL_RAND_BITS, 0, 0))
+#else
 	if (!BN_pseudo_rand(btmp, SERIAL_RAND_BITS, 0, 0))
+#endif
 		goto error;
 	if (ai && !BN_to_ASN1_INTEGER(btmp, ai))
 		goto error;
@@ -220,6 +227,28 @@ int cert_init(void)
 	cert_t *cert;
 	unsigned int i;
 
+	certs = malloc((num_def_certs * sizeof(def_certs[0]))
+#ifdef PDEF_CERTS
+		       + (num_pdef_certs * sizeof(pdef_certs[0]))
+#endif
+		       );
+	if (certs == NULL) {
+		ERROR("%s:%d Failed to allocate memory.\n", __func__, __LINE__);
+		return 1;
+	}
+
+	memcpy(&certs[0], &def_certs[0],
+	       (num_def_certs * sizeof(def_certs[0])));
+
+#ifdef PDEF_CERTS
+	memcpy(&certs[num_def_certs], &pdef_certs[0],
+	       (num_pdef_certs * sizeof(pdef_certs[0])));
+
+	num_certs = num_def_certs + num_pdef_certs;
+#else
+	num_certs = num_def_certs;
+#endif
+
 	for (i = 0; i < num_certs; i++) {
 		cert = &certs[i];
 		cmd_opt.long_opt.name = cert->opt;
@@ -247,3 +276,19 @@ cert_t *cert_get_by_opt(const char *opt)
 
 	return NULL;
 }
+
+void cert_cleanup(void)
+{
+	unsigned int i;
+
+	for (i = 0; i < num_certs; i++) {
+		if (certs[i].fn != NULL) {
+			void *ptr = (void *)certs[i].fn;
+
+			certs[i].fn = NULL;
+			free(ptr);
+		}
+	}
+	free(certs);
+}
+

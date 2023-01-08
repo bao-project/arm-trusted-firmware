@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2020, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2018-2022, ARM Limited and Contributors. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -7,12 +7,16 @@
 /* Helper functions to offer easier navigation of Device Tree Blob */
 
 #include <assert.h>
+#include <errno.h>
+#include <inttypes.h>
+#include <stdint.h>
 #include <string.h>
 
 #include <libfdt.h>
 
 #include <common/debug.h>
 #include <common/fdt_wrappers.h>
+#include <common/uuid.h>
 
 /*
  * Read cells from a given property of the given node. Any number of 32-bit
@@ -33,7 +37,7 @@ int fdt_read_uint32_array(const void *dtb, int node, const char *prop_name,
 	/* Access property and obtain its length (in bytes) */
 	prop = fdt_getprop(dtb, node, prop_name, &value_len);
 	if (prop == NULL) {
-		WARN("Couldn't find property %s in dtb\n", prop_name);
+		VERBOSE("Couldn't find property %s in dtb\n", prop_name);
 		return -FDT_ERR_NOTFOUND;
 	}
 
@@ -146,6 +150,39 @@ int fdtw_read_string(const void *dtb, int node, const char *prop,
 	if (len >= size) {
 		WARN("String of property %s in dtb has been truncated\n", prop);
 		return -1;
+	}
+
+	return 0;
+}
+
+/*
+ * Read UUID from a given property of the given node. Returns 0 on success,
+ * and a negative value upon error.
+ */
+int fdtw_read_uuid(const void *dtb, int node, const char *prop,
+		   unsigned int length, uint8_t *uuid)
+{
+	/* Buffer for UUID string (plus NUL terminator) */
+	char uuid_string[UUID_STRING_LENGTH + 1U];
+	int err;
+
+	assert(dtb != NULL);
+	assert(prop != NULL);
+	assert(uuid != NULL);
+	assert(node >= 0);
+
+	if (length < UUID_BYTES_LENGTH) {
+		return -EINVAL;
+	}
+
+	err = fdtw_read_string(dtb, node, prop, uuid_string,
+			       UUID_STRING_LENGTH + 1U);
+	if (err != 0) {
+		return err;
+	}
+
+	if (read_uuid(uuid, uuid_string) != 0) {
+		return -FDT_ERR_BADVALUE;
 	}
 
 	return 0;
@@ -367,7 +404,7 @@ static bool fdtw_xlat_hit(const uint32_t *value, int child_addr_size,
 	addr_range = fdt_read_prop_cells(value + child_addr_size +
 				parent_addr_size,
 				range_size);
-	VERBOSE("DT: Address %llx mapped to %llx with range %llx\n",
+	VERBOSE("DT: Address %" PRIx64 " mapped to %" PRIx64 " with range %" PRIx64 "\n",
 		local_address, parent_address, addr_range);
 
 	/* Perform range check */
@@ -378,8 +415,8 @@ static bool fdtw_xlat_hit(const uint32_t *value, int child_addr_size,
 
 	/* Found hit for the addr range that needs to be translated */
 	*translated_addr = parent_address + (base_address - local_address);
-	VERBOSE("DT: child address %llx mapped to %llx in parent bus\n",
-			local_address, parent_address);
+	VERBOSE("DT: child address %" PRIx64 "mapped to %" PRIx64 " in parent bus\n",
+		local_address, parent_address);
 	return true;
 }
 
@@ -435,8 +472,8 @@ static uint64_t fdtw_search_all_xlat_entries(const void *dtb,
 		next_entry = next_entry + ncells_xlat;
 	}
 
-	INFO("DT: No translation found for address %llx in node %s\n",
-		base_address, fdt_get_name(dtb, local_bus, NULL));
+	INFO("DT: No translation found for address %" PRIx64 " in node %s\n",
+	     base_address, fdt_get_name(dtb, local_bus, NULL));
 	return ILLEGAL_ADDR;
 }
 
@@ -536,4 +573,69 @@ uint64_t fdtw_translate_address(const void *dtb, int node,
 
 	/* Translate the local device address recursively */
 	return fdtw_translate_address(dtb, local_bus_node, global_address);
+}
+
+/*
+ * For every CPU node (`/cpus/cpu@n`) in an FDT, execute a callback passing a
+ * pointer to the FDT and the offset of the CPU node. If the return value of the
+ * callback is negative, it is treated as an error and the loop is aborted. In
+ * this situation, the value of the callback is returned from the function.
+ *
+ * Returns `0` on success, or a negative integer representing an error code.
+ */
+int fdtw_for_each_cpu(const void *dtb,
+		      int (*callback)(const void *dtb, int node, uintptr_t mpidr))
+{
+	int ret = 0;
+	int parent, node = 0;
+
+	parent = fdt_path_offset(dtb, "/cpus");
+	if (parent < 0) {
+		return parent;
+	}
+
+	fdt_for_each_subnode(node, dtb, parent) {
+		const char *name;
+		int len;
+
+		uintptr_t mpidr = 0U;
+
+		name = fdt_get_name(dtb, node, &len);
+		if (strncmp(name, "cpu@", 4) != 0) {
+			continue;
+		}
+
+		ret = fdt_get_reg_props_by_index(dtb, node, 0, &mpidr, NULL);
+		if (ret < 0) {
+			break;
+		}
+
+		ret = callback(dtb, node, mpidr);
+		if (ret < 0) {
+			break;
+		}
+	}
+
+	return ret;
+}
+
+/*
+ * Find a given node in device tree. If not present, add it.
+ * Returns offset of node found/added on success, and < 0 on error.
+ */
+int fdtw_find_or_add_subnode(void *fdt, int parentoffset, const char *name)
+{
+	int offset;
+
+	offset = fdt_subnode_offset(fdt, parentoffset, name);
+
+	if (offset == -FDT_ERR_NOTFOUND) {
+		offset = fdt_add_subnode(fdt, parentoffset, name);
+	}
+
+	if (offset < 0) {
+		ERROR("%s: %s: %s\n", __func__, name, fdt_strerror(offset));
+	}
+
+	return offset;
 }

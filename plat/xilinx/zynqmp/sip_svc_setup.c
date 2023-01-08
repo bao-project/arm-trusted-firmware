@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2018, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2013-2020, ARM Limited and Contributors. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -13,9 +13,9 @@
 #include "pm_svc_main.h"
 
 /* SMC function IDs for SiP Service queries */
-#define ZYNQMP_SIP_SVC_CALL_COUNT	0x8200ff00
-#define ZYNQMP_SIP_SVC_UID		0x8200ff01
-#define ZYNQMP_SIP_SVC_VERSION		0x8200ff03
+#define ZYNQMP_SIP_SVC_CALL_COUNT	U(0x8200ff00)
+#define ZYNQMP_SIP_SVC_UID		U(0x8200ff01)
+#define ZYNQMP_SIP_SVC_VERSION		U(0x8200ff03)
 
 /* SiP Service Calls version numbers */
 #define SIP_SVC_VERSION_MAJOR	0
@@ -25,6 +25,9 @@
 #define PM_FID_MASK	0xf000u
 #define PM_FID_VALUE	0u
 #define IPI_FID_VALUE	0x1000u
+#define EM_FID_MASK     0xf0000u
+#define EM_FID_VALUE    0xE0000u
+#define is_em_fid(_fid) (((_fid) & EM_FID_MASK) == EM_FID_VALUE)
 #define is_pm_fid(_fid) (((_fid) & PM_FID_MASK) == PM_FID_VALUE)
 #define is_ipi_fid(_fid) (((_fid) & PM_FID_MASK) == IPI_FID_VALUE)
 
@@ -41,9 +44,7 @@ DEFINE_SVC_UUID2(zynqmp_sip_uuid,
 static int32_t sip_svc_setup(void)
 {
 	/* PM implementation as SiP Service */
-	pm_setup();
-
-	return 0;
+	return pm_setup();
 }
 
 /**
@@ -52,7 +53,7 @@ static int32_t sip_svc_setup(void)
  * Handler for all SiP SMC calls. Handles standard SIP requests
  * and calls PM SMC handler if the call is for a PM-API function.
  */
-uintptr_t sip_svc_smc_handler(uint32_t smc_fid,
+static uintptr_t sip_svc_smc_handler(uint32_t smc_fid,
 			      u_register_t x1,
 			      u_register_t x2,
 			      u_register_t x3,
@@ -61,8 +62,12 @@ uintptr_t sip_svc_smc_handler(uint32_t smc_fid,
 			      void *handle,
 			      u_register_t flags)
 {
+	/* Let EM SMC handler deal with EM-related requests */
+	if (is_em_fid(smc_fid)) {
+		return em_smc_handler(smc_fid, x1, x2, x3, x4, cookie, handle,
+					flags);
+	} else if (is_pm_fid(smc_fid)) {
 	/* Let PM SMC handler deal with PM-related requests */
-	if (is_pm_fid(smc_fid)) {
 		return pm_smc_handler(smc_fid, x1, x2, x3, x4, cookie, handle,
 				      flags);
 	}
@@ -95,6 +100,6 @@ DECLARE_RT_SVC(
 		sip_svc,
 		OEN_SIP_START,
 		OEN_SIP_END,
-		SMC_TYPE_FAST,
+		(uint8_t)SMC_TYPE_FAST,
 		sip_svc_setup,
 		sip_svc_smc_handler);

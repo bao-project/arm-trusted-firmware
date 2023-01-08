@@ -4,6 +4,8 @@
 # SPDX-License-Identifier: BSD-3-Clause
 #
 
+include drivers/arm/gic/v2/gicv2.mk
+
 RK_PLAT			:=	plat/rockchip
 RK_PLAT_SOC		:=	${RK_PLAT}/${PLAT}
 RK_PLAT_COMMON		:=	${RK_PLAT}/common
@@ -22,9 +24,7 @@ PLAT_INCLUDES		:=	-Idrivers/arm/gic/common/			\
 				-I${RK_PLAT_SOC}/drivers/soc/			\
 				-I${RK_PLAT_SOC}/include/
 
-RK_GIC_SOURCES		:=	drivers/arm/gic/common/gic_common.c		\
-				drivers/arm/gic/v2/gicv2_main.c			\
-				drivers/arm/gic/v2/gicv2_helpers.c		\
+RK_GIC_SOURCES		:=	${GICV2_SOURCES}				\
 				plat/common/plat_gicv2.c			\
 				${RK_PLAT}/common/rockchip_gicv2.c
 
@@ -34,6 +34,10 @@ PLAT_BL_COMMON_SOURCES	:=	common/desc_image_load.c			\
 				lib/xlat_tables/xlat_tables_common.c		\
 				plat/common/aarch64/crash_console_helpers.S	\
 				plat/common/plat_psci_common.c
+
+ifneq (${ENABLE_STACK_PROTECTOR},0)
+PLAT_BL_COMMON_SOURCES	+=	${RK_PLAT_COMMON}/rockchip_stack_protector.c
+endif
 
 BL31_SOURCES		+=	${RK_GIC_SOURCES}				\
 				drivers/arm/cci/cci.c				\

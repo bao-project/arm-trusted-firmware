@@ -8,11 +8,14 @@
 #include <stddef.h>
 #include <string.h>
 
+#include <platform_def.h>
+
 #include <drivers/arm/cryptocell/713/bsv_api.h>
 #include <drivers/arm/cryptocell/713/bsv_crypto_asym_api.h>
 #include <drivers/auth/crypto_mod.h>
 
 #include <mbedtls/oid.h>
+#include <mbedtls/x509.h>
 
 #define LIB_NAME		"CryptoCell 713 SBROM"
 #define RSA_SALT_LEN		32

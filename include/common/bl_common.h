@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2020, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2013-2022, ARM Limited and Contributors. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -81,6 +81,10 @@
 #define __RODATA_END__			Load$$__RODATA_EPILOGUE__$$Base
 #define __RT_SVC_DESCS_START__		Load$$__RT_SVC_DESCS__$$Base
 #define __RT_SVC_DESCS_END__		Load$$__RT_SVC_DESCS__$$Limit
+#if SPMC_AT_EL3
+#define __EL3_LP_DESCS_START__		Load$$__EL3_LP_DESCS__$$Base
+#define __EL3_LP_DESCS_END__		Load$$__EL3_LP_DESCS__$$Limit
+#endif
 #define __RW_START__			Load$$LR$$LR_RW_DATA$$Base
 #define __RW_END__			Load$$LR$$LR_END$$Base
 #define __SPM_SHIM_EXCEPTIONS_START__	Load$$__SPM_SHIM_EXCEPTIONS__$$Base
@@ -106,6 +110,10 @@ IMPORT_SYM(uintptr_t, __RODATA_END__,		BL_RO_DATA_END);
 IMPORT_SYM(uintptr_t, __RO_START__,		BL_CODE_BASE);
 IMPORT_SYM(uintptr_t, __RO_END__,		BL_CODE_END);
 #endif
+#if SEPARATE_NOBITS_REGION
+IMPORT_SYM(uintptr_t, __NOBITS_START__,		BL_NOBITS_BASE);
+IMPORT_SYM(uintptr_t, __NOBITS_END__,		BL_NOBITS_END);
+#endif
 IMPORT_SYM(uintptr_t, __RW_END__,		BL_END);
 
 #if defined(IMAGE_BL1)
@@ -122,6 +130,8 @@ IMPORT_SYM(uintptr_t, __BL31_START__,		BL31_START);
 IMPORT_SYM(uintptr_t, __BL31_END__,		BL31_END);
 #elif defined(IMAGE_BL32)
 IMPORT_SYM(uintptr_t, __BL32_END__,		BL32_END);
+#elif defined(IMAGE_RMM)
+IMPORT_SYM(uintptr_t, __RMM_END__,		RMM_END);
 #endif /* IMAGE_BLX */
 
 /* The following symbols are only exported from the BL2 at EL3 linker script. */
@@ -168,6 +178,7 @@ void dyn_disable_auth(void);
 
 extern const char build_message[];
 extern const char version_string[];
+const char *get_version(void);
 
 void print_entry_point_info(const entry_point_info_t *ep_info);
 uintptr_t page_align(uintptr_t value, unsigned dir);

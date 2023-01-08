@@ -7,13 +7,15 @@
 #include <plat_private.h>
 #include <plat/common/platform.h>
 
-int plat_core_pos_by_mpidr(u_register_t mpidr)
+int32_t plat_core_pos_by_mpidr(u_register_t mpidr)
 {
-	if (mpidr & MPIDR_CLUSTER_MASK)
+	if (mpidr & MPIDR_CLUSTER_MASK) {
 		return -1;
+	}
 
-	if ((mpidr & MPIDR_CPU_MASK) >= PLATFORM_CORE_COUNT)
+	if ((mpidr & MPIDR_CPU_MASK) >= PLATFORM_CORE_COUNT) {
 		return -1;
+	}
 
 	return zynqmp_calc_core_pos(mpidr);
 }

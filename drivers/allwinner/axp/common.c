@@ -48,6 +48,7 @@ void axp_power_off(void)
 	axp_setbits(0x32, BIT(7));
 }
 
+#if SUNXI_SETUP_REGULATORS == 1
 /*
  * Retrieve the voltage from a given regulator DTB node.
  * Both the regulator-{min,max}-microvolt properties must be present and
@@ -96,12 +97,27 @@ static int setup_regulator(const void *fdt, int node,
 	return 0;
 }
 
+static bool is_node_disabled(const void *fdt, int node)
+{
+	const char *cell;
+	cell = fdt_getprop(fdt, node, "status", NULL);
+	if (cell == NULL) {
+		return false;
+	}
+	return strcmp(cell, "okay") != 0;
+}
+
 static bool should_enable_regulator(const void *fdt, int node)
 {
-	if (fdt_getprop(fdt, node, "phandle", NULL) != NULL)
+	if (is_node_disabled(fdt, node)) {
+		return false;
+	}
+	if (fdt_getprop(fdt, node, "phandle", NULL) != NULL) {
 		return true;
-	if (fdt_getprop(fdt, node, "regulator-always-on", NULL) != NULL)
+	}
+	if (fdt_getprop(fdt, node, "regulator-always-on", NULL) != NULL) {
 		return true;
+	}
 	return false;
 }
 
@@ -193,3 +209,4 @@ void axp_setup_regulators(const void *fdt)
 			axp_setbits(0x11, BIT(7));
 	}
 }
+#endif	/* SUNXI_SETUP_REGULATORS */

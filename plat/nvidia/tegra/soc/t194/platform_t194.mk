@@ -1,8 +1,10 @@
 #
-# Copyright (c) 2019-2020, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2019-2021, NVIDIA CORPORATION. All rights reserved.
 #
 # SPDX-License-Identifier: BSD-3-Clause
 #
+
+include common/fdt_wrappers.mk
 
 # platform configs
 ENABLE_CONSOLE_SPE			:= 1
@@ -31,7 +33,7 @@ MAX_MMAP_REGIONS			:= 30
 $(eval $(call add_define,MAX_MMAP_REGIONS))
 
 # enable RAS handling
-HANDLE_EA_EL3_FIRST			:= 1
+HANDLE_EA_EL3_FIRST_NS			:= 1
 RAS_EXTENSION				:= 1
 
 # platform files
@@ -74,10 +76,10 @@ endif
 
 # SPM dispatcher
 ifeq (${SPD},spmd)
-# include device tree helper library
 include lib/libfdt/libfdt.mk
 # sources to support spmd
 BL31_SOURCES		+=	plat/common/plat_spmd_manifest.c	\
-				common/fdt_wrappers.c			\
 				${LIBFDT_SRCS}
+
+BL31_SOURCES		+=	${FDT_WRAPPERS_SOURCES}
 endif

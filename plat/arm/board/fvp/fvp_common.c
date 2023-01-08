@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2020, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2013-2022, Arm Limited and Contributors. All rights reserved.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -17,6 +17,9 @@
 #include <lib/xlat_tables/xlat_tables_compat.h>
 #include <platform_def.h>
 #include <services/arm_arch_svc.h>
+#if ENABLE_RME
+#include <services/rmm_core_manifest.h>
+#endif
 #if SPM_MM
 #include <services/spm_mm_partition.h>
 #endif
@@ -48,6 +51,18 @@ arm_config_t arm_config;
 					DEVICE1_SIZE,			\
 					MT_DEVICE | MT_RW | MT_SECURE)
 
+#if FVP_GICR_REGION_PROTECTION
+#define MAP_GICD_MEM	MAP_REGION_FLAT(BASE_GICD_BASE,			\
+					BASE_GICD_SIZE,			\
+					MT_DEVICE | MT_RW | MT_SECURE)
+
+/* Map all core's redistributor memory as read-only. After boots up,
+ * per-core map its redistributor memory as read-write */
+#define MAP_GICR_MEM	MAP_REGION_FLAT(BASE_GICR_BASE,			\
+					(BASE_GICR_SIZE * PLATFORM_CORE_COUNT),\
+					MT_DEVICE | MT_RO | MT_SECURE)
+#endif /* FVP_GICR_REGION_PROTECTION */
+
 /*
  * Need to be mapped with write permissions in order to set a new non-volatile
  * counter value.
@@ -60,17 +75,16 @@ arm_config_t arm_config;
  * Table of memory regions for various BL stages to map using the MMU.
  * This doesn't include Trusted SRAM as setup_page_tables() already takes care
  * of mapping it.
- *
- * The flash needs to be mapped as writable in order to erase the FIP's Table of
- * Contents in case of unrecoverable error (see plat_error_handler()).
  */
 #ifdef IMAGE_BL1
 const mmap_region_t plat_arm_mmap[] = {
 	ARM_MAP_SHARED_RAM,
-	V2M_MAP_FLASH0_RW,
+	V2M_MAP_FLASH0_RO,
 	V2M_MAP_IOFPGA,
 	MAP_DEVICE0,
+#if FVP_INTERCONNECT_DRIVER == FVP_CCN
 	MAP_DEVICE1,
+#endif
 #if TRUSTED_BOARD_BOOT
 	/* To access the Root of Trust Public Key registers. */
 	MAP_DEVICE2,
@@ -86,25 +100,37 @@ const mmap_region_t plat_arm_mmap[] = {
 	V2M_MAP_FLASH0_RW,
 	V2M_MAP_IOFPGA,
 	MAP_DEVICE0,
+#if FVP_INTERCONNECT_DRIVER == FVP_CCN
 	MAP_DEVICE1,
+#endif
 	ARM_MAP_NS_DRAM1,
 #ifdef __aarch64__
 	ARM_MAP_DRAM2,
 #endif
-#if defined(SPD_spmd)
+	/*
+	 * Required to load HW_CONFIG, SPMC and SPs to trusted DRAM.
+	 */
 	ARM_MAP_TRUSTED_DRAM,
-#endif
+#if ENABLE_RME
+	ARM_MAP_RMM_DRAM,
+	ARM_MAP_GPT_L1_DRAM,
+#endif /* ENABLE_RME */
 #ifdef SPD_tspd
 	ARM_MAP_TSP_SEC_MEM,
 #endif
 #if TRUSTED_BOARD_BOOT
 	/* To access the Root of Trust Public Key registers. */
 	MAP_DEVICE2,
-#if !BL2_AT_EL3
-	ARM_MAP_BL1_RW,
-#endif
 #endif /* TRUSTED_BOARD_BOOT */
-#if SPM_MM
+
+#if CRYPTO_SUPPORT && !BL2_AT_EL3
+	/*
+	 * To access shared the Mbed TLS heap while booting the
+	 * system with Crypto support
+	 */
+	ARM_MAP_BL1_RW,
+#endif /* CRYPTO_SUPPORT && !BL2_AT_EL3 */
+#if SPM_MM || SPMC_AT_EL3
 	ARM_SP_IMAGE_MMAP,
 #endif
 #if ARM_BL31_IN_DRAM
@@ -134,13 +160,20 @@ const mmap_region_t plat_arm_mmap[] = {
 	ARM_MAP_EL3_TZC_DRAM,
 	V2M_MAP_IOFPGA,
 	MAP_DEVICE0,
+#if FVP_GICR_REGION_PROTECTION
+	MAP_GICD_MEM,
+	MAP_GICR_MEM,
+#else
 	MAP_DEVICE1,
+#endif /* FVP_GICR_REGION_PROTECTION */
 	ARM_V2M_MAP_MEM_PROTECT,
 #if SPM_MM
 	ARM_SPM_BUF_EL3_MMAP,
 #endif
-	/* Required by fconf APIs to read HW_CONFIG dtb loaded into DRAM */
-	ARM_DTB_DRAM_NS,
+#if ENABLE_RME
+	ARM_MAP_GPT_L1_DRAM,
+	ARM_MAP_EL3_RMM_SHARED_MEM,
+#endif
 	{0}
 };
 
@@ -167,8 +200,15 @@ const mmap_region_t plat_arm_mmap[] = {
 	V2M_MAP_IOFPGA,
 	MAP_DEVICE0,
 	MAP_DEVICE1,
-	/* Required by fconf APIs to read HW_CONFIG dtb loaded into DRAM */
-	ARM_DTB_DRAM_NS,
+	{0}
+};
+#endif
+
+#ifdef IMAGE_RMM
+const mmap_region_t plat_arm_mmap[] = {
+	V2M_MAP_IOFPGA,
+	MAP_DEVICE0,
+	MAP_DEVICE1,
 	{0}
 };
 #endif
@@ -410,7 +450,7 @@ void fvp_interconnect_disable(void)
 #endif
 }
 
-#if TRUSTED_BOARD_BOOT
+#if CRYPTO_SUPPORT
 int plat_get_mbedtls_heap(void **heap_addr, size_t *heap_size)
 {
 	assert(heap_addr != NULL);
@@ -418,7 +458,7 @@ int plat_get_mbedtls_heap(void **heap_addr, size_t *heap_size)
 
 	return arm_get_mbedtls_heap(heap_addr, heap_size);
 }
-#endif
+#endif /* CRYPTO_SUPPORT */
 
 void fvp_timer_init(void)
 {
@@ -462,9 +502,9 @@ int32_t plat_is_smccc_feature_available(u_register_t fid)
 int32_t plat_get_soc_version(void)
 {
 	return (int32_t)
-		((ARM_SOC_IDENTIFICATION_CODE << ARM_SOC_IDENTIFICATION_SHIFT)
-		 | (ARM_SOC_CONTINUATION_CODE << ARM_SOC_CONTINUATION_SHIFT)
-		 | FVP_SOC_ID);
+		(SOC_ID_SET_JEP_106(ARM_SOC_CONTINUATION_CODE,
+				    ARM_SOC_IDENTIFICATION_CODE) |
+		 (FVP_SOC_ID & SOC_ID_IMPL_DEF_MASK));
 }
 
 /* Get SOC revision */
@@ -473,6 +513,32 @@ int32_t plat_get_soc_revision(void)
 	unsigned int sys_id;
 
 	sys_id = mmio_read_32(V2M_SYSREGS_BASE + V2M_SYS_ID);
-	return (int32_t)((sys_id >> V2M_SYS_ID_REV_SHIFT) &
-			V2M_SYS_ID_REV_MASK);
+	return (int32_t)(((sys_id >> V2M_SYS_ID_REV_SHIFT) &
+			  V2M_SYS_ID_REV_MASK) & SOC_ID_REV_MASK);
 }
+
+#if ENABLE_RME
+/*
+ * Get a pointer to the RMM-EL3 Shared buffer and return it
+ * through the pointer passed as parameter.
+ *
+ * This function returns the size of the shared buffer.
+ */
+size_t plat_rmmd_get_el3_rmm_shared_mem(uintptr_t *shared)
+{
+	*shared = (uintptr_t)RMM_SHARED_BASE;
+
+	return (size_t)RMM_SHARED_SIZE;
+}
+
+int plat_rmmd_load_manifest(rmm_manifest_t *manifest)
+{
+	assert(manifest != NULL);
+
+	manifest->version = RMMD_MANIFEST_VERSION;
+	manifest->plat_data = (uintptr_t)NULL;
+
+	return 0;
+}
+
+#endif
