@@ -13,6 +13,8 @@
 #include <lib/runtime_instr.h>
 #include <lib/xlat_tables/xlat_mmu_helpers.h>
 
+#include <atf_stubs.h>
+
 	.globl	bl31_entrypoint
 	.globl	bl31_warm_entrypoint
 
@@ -124,6 +126,16 @@ func bl31_entrypoint
 	sub	x1, x1, x0
 	bl	clean_dcache_range
 
+	/* --------------------------------------------------------------------
+	 * Jump to partitioner init function
+	 * --------------------------------------------------------------------
+	 */
+	bl	partitioner_init
+	bl	plat_my_core_pos
+	bl	partition_set_cpu
+	bl	plat_my_core_pos
+	bl	partition_prepare_atfctx
+
 	b	el3_exit
 endfunc bl31_entrypoint
 
@@ -217,6 +229,12 @@ func bl31_warm_entrypoint
 #endif /* ENABLE_PAUTH */
 
 	bl	psci_warmboot_entrypoint
+
+	/* TODO: Call partition_prepare_atfctx() */
+	bl	plat_my_core_pos
+	bl	partition_set_cpu
+	bl	plat_my_core_pos
+	bl	partition_prepare_atfctx
 
 #if ENABLE_RUNTIME_INSTRUMENTATION
 	pmf_calc_timestamp_addr rt_instr_svc, RT_INSTR_EXIT_PSCI

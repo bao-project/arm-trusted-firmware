@@ -44,3 +44,7 @@ tags
 
 # Node.js
 node_modules/
+
+# Partitioner: ignore temp files
+_tmp_*
+.clang-format

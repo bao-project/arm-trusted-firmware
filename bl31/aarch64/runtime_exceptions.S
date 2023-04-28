@@ -15,6 +15,7 @@
 #include <el3_common_macros.S>
 #include <lib/el3_runtime/cpu_data.h>
 #include <lib/smccc.h>
+#include <syscalls.h>
 
 	.globl	runtime_exceptions
 
@@ -520,38 +521,40 @@ smc_handler64:
 
 	mov	sp, x12
 
-	/* Get the unique owning entity number */
-	ubfx	x16, x0, #FUNCID_OEN_SHIFT, #FUNCID_OEN_WIDTH
-	ubfx	x15, x0, #FUNCID_TYPE_SHIFT, #FUNCID_TYPE_WIDTH
-	orr	x16, x16, x15, lsl #FUNCID_OEN_WIDTH
+// 	/* Get the unique owning entity number */
+// 	ubfx	x16, x0, #FUNCID_OEN_SHIFT, #FUNCID_OEN_WIDTH
+// 	ubfx	x15, x0, #FUNCID_TYPE_SHIFT, #FUNCID_TYPE_WIDTH
+// 	orr	x16, x16, x15, lsl #FUNCID_OEN_WIDTH
 
-	/* Load descriptor index from array of indices */
-	adrp	x14, rt_svc_descs_indices
-	add	x14, x14, :lo12:rt_svc_descs_indices
-	ldrb	w15, [x14, x16]
+// 	/* Load descriptor index from array of indices */
+// 	adrp	x14, rt_svc_descs_indices
+// 	add	x14, x14, :lo12:rt_svc_descs_indices
+// 	ldrb	w15, [x14, x16]
 
-	/* Any index greater than 127 is invalid. Check bit 7. */
-	tbnz	w15, 7, smc_unknown
+// 	/* Any index greater than 127 is invalid. Check bit 7. */
+// 	tbnz	w15, 7, smc_unknown
 
-	/*
-	 * Get the descriptor using the index
-	 * x11 = (base + off), w15 = index
-	 *
-	 * handler = (base + off) + (index << log2(size))
-	 */
-	adr	x11, (__RT_SVC_DESCS_START__ + RT_SVC_DESC_HANDLE)
-	lsl	w10, w15, #RT_SVC_SIZE_LOG2
-	ldr	x15, [x11, w10, uxtw]
+// 	/*
+// 	 * Get the descriptor using the index
+// 	 * x11 = (base + off), w15 = index
+// 	 *
+// 	 * handler = (base + off) + (index << log2(size))
+// 	 */
+// 	adr	x11, (__RT_SVC_DESCS_START__ + RT_SVC_DESC_HANDLE)
+// 	lsl	w10, w15, #RT_SVC_SIZE_LOG2
+// 	ldr	x15, [x11, w10, uxtw]
 
-	/*
-	 * Call the Secure Monitor Call handler and then drop directly into
-	 * el3_exit() which will program any remaining architectural state
-	 * prior to issuing the ERET to the desired lower EL.
-	 */
-#if DEBUG
-	cbz	x15, rt_svc_fw_critical_error
-#endif
-	blr	x15
+// 	/*
+// 	 * Call the Secure Monitor Call handler and then drop directly into
+// 	 * el3_exit() which will program any remaining architectural state
+// 	 * prior to issuing the ERET to the desired lower EL.
+// 	 */
+// #if DEBUG
+// 	cbz	x15, rt_svc_fw_critical_error
+// #endif
+// 	blr	x15
+
+	bl	partitioner_systemcall
 
 	b	el3_exit
 

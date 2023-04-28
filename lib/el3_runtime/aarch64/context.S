@@ -965,6 +965,7 @@ sve_not_enabled:
 #ifdef IMAGE_BL31
 	str	xzr, [sp, #CTX_EL3STATE_OFFSET + CTX_IS_IN_EL3]
 #endif
+
 	exception_return
 
 endfunc el3_exit
