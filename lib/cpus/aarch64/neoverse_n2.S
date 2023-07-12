@@ -428,6 +428,30 @@ func check_errata_2388450
 	b	cpu_rev_var_ls
 endfunc check_errata_2388450
 
+/* -------------------------------------------------------
+ * Errata Workaround for Neoverse N2 Erratum 2743089.
+ * This applies to revisions <= r0p2 and is fixed in r0p3.
+ * x0: variant[4:7] and revision[0:3] of current cpu.
+ * Shall clobber: x0-x17
+ * -------------------------------------------------------
+ */
+func errata_n2_2743089_wa
+	mov	x17, x30
+	bl	check_errata_2743089
+	cbz	x0, 1f
+
+	/* dsb before isb of power down sequence */
+	dsb	sy
+1:
+	ret	x17
+endfunc errata_n2_2743089_wa
+
+func check_errata_2743089
+	/* Applies to all revisions <= r0p2 */
+	mov	x1, #0x02
+	b	cpu_rev_var_ls
+endfunc check_errata_2743089
+
 func check_errata_cve_2022_23960
 #if WORKAROUND_CVE_2022_23960
 	mov	x0, #ERRATA_APPLIES
@@ -521,7 +545,7 @@ func neoverse_n2_reset_func
 	bl	errata_n2_2388450_wa
 #endif
 
-#if ENABLE_AMU
+#if ENABLE_FEAT_AMU
 	/* Make sure accesses from EL0/EL1 and EL2 are not trapped to EL3 */
 	mrs	x0, cptr_el3
 	orr	x0, x0, #TAM_BIT
@@ -576,6 +600,12 @@ func neoverse_n2_core_pwr_dwn
 	mrs	x0, NEOVERSE_N2_CPUPWRCTLR_EL1
 	orr	x0, x0, #NEOVERSE_N2_CORE_PWRDN_EN_BIT
 	msr	NEOVERSE_N2_CPUPWRCTLR_EL1, x0
+#if ERRATA_N2_2743089
+	mov	x15, x30
+	bl	cpu_get_rev_var
+	bl	errata_n2_2743089_wa
+	mov	x30, x15
+#endif /* ERRATA_N2_2743089 */
 	isb
 	ret
 endfunc neoverse_n2_core_pwr_dwn
@@ -607,6 +637,7 @@ func neoverse_n2_errata_report
 	report_errata ERRATA_N2_2326639, neoverse_n2, 2326639
 	report_errata ERRATA_N2_2376738, neoverse_n2, 2376738
 	report_errata ERRATA_N2_2388450, neoverse_n2, 2388450
+	report_errata ERRATA_N2_2743089, neoverse_n2, 2743089
 	report_errata WORKAROUND_CVE_2022_23960, neoverse_n2, cve_2022_23960
 	report_errata ERRATA_DSU_2313941, neoverse_n2, dsu_2313941
 
